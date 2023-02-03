@@ -19,8 +19,11 @@
 #define MINPULSETICS    (MINPULSEWIDTH * TICS_PER_MICROSECOND)
 #define MAXPULSETICS    (MAXPULSEWIDTH * TICS_PER_MICROSECOND)
 
-#define OFF_COUNT       50  // if autoOff is set, a pulse is switched off, if it length does not change for
-                            // OFF_COUNT cycles ( = OFF_COUNT * 20ms )
+#ifndef OFF_COUNT
+  #define OFF_COUNT       50  // if autoOff is set, a pulse is switched off, if it length does not change for
+                              // OFF_COUNT cycles ( = OFF_COUNT * 20ms )
+#endif
+
 #define FIRST_PULSE     100 // first pulse starts 200 tics after timer overflow, so we do not compete
                             // with overflow IRQ
                             
