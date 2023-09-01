@@ -158,6 +158,9 @@
 #else // AVR and STM32
 #define MINPULSEWIDTH   700U      // don't make it shorter than 700
 #define MAXPULSEWIDTH   2300U     // don't make it longer than 2300
+
+//#define MINPULSEWIDTH   760U      // don't make it shorter than 700
+//#define MAXPULSEWIDTH   2200U     // don't make it longer than 2300
 #endif
 
 // softled related defines

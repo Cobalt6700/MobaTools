@@ -401,6 +401,9 @@ void MoToServo::write(uint16_t angleArg)
             // pulse width as degrees (byte values are always degrees) 09-02-2017
             angleArg = min( 180,(int)angleArg);
             newpos = time2tic( map( angleArg, 0,180, _minPw, _maxPw ) );
+            // 89 - 0 : 180 to 700:2300 = 791
+            // 90 - 0 : 180 to 700:2300 = 800
+            // 91 - 0 : 180 to 700:2300 = 808
         } else {
             // pulsewidth as microseconds
             newpos = time2tic( constrain( angleArg, _minPw, _maxPw ) );
@@ -474,8 +477,14 @@ uint8_t MoToServo::read() {
     // get position in degrees
     int offset;
     if ( _servoData.pwmNbr == NOT_ATTACHED ) return -1; // Servo not attached
-    offset = (_maxPw - _minPw)/180/2;
-    return map( readMicroseconds() + offset, _minPw, _maxPw, 0, 180 );
+    offset = (((_maxPw - _minPw)/180)/2) ;
+    return map( readMicroseconds() + (offset + 1), _minPw, _maxPw, 0, 180 );
+    // ((( 2300 - 700)/180)/2) + 1 = 5
+    // uS_PD = 8
+    // 89 - 791 + 5 = 796 / 8 = 89.7
+    // 90 - 800 + 5 = 805.4 
+    // 91 - 808.8
+
 }
 
 uint16_t MoToServo::readMicroseconds() {
