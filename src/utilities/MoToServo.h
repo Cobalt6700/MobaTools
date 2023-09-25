@@ -8,7 +8,13 @@
   Definitions and declarations for the servo part of MobaTools
 */
 
+/* Some definitions for the servo class: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+	increments (INC) is the internal timebase for all time computing ( it's a virtual value ). All time values ( e.g. pulselength ) are internally stored based on this value.
+	tics (TIC) ist the physical resolutin of the servo timer. This must always be an integer multiple of INC.
+*/
+
 // defines for servos
+constexpr uint8_t TICS_PER_4MICROSECOND = 4*TICS_PER_MICROSECOND;
 #define Servo2	MoToServo		// Kompatibilität zu Version 01 und 02
 #define AUTOOFF 1               // 2nd Parameter for servo.attach to switch off pulses in standstill
 #define OVLMARGIN           280     // Overlap margin ( Overlap is MINPULSEWIDTH - OVLMARGIN )
@@ -26,17 +32,22 @@
 
 #define FIRST_PULSE     100 // first pulse starts 200 tics after timer overflow, so we do not compete
                             // with overflow IRQ
-                            
+
+// All position values in tics are multiplied by this factor. This means, that one 
+// 'Speed-tic' is 0,125 µs per 20ms cycle. This gives better resolution in defining the speed.
+// Only when computing the next interrupt time the values are divided by this value again to get
+// the real 'timer tics'
+constexpr uint8_t INC_PER_MICROSECOND = 8;
+constexpr uint8_t  COMPAT_FACT = INC_PER_MICROSECOND /2; // old Increment value was same as Timer Tics ( 2 Tics/µs                           
 // defaults for macros that are not defined in architecture dependend includes
-#ifndef SPEED_RES
-#define SPEED_RES       (8/TICS_PER_MICROSECOND)   // All position values in tics are multiplied by this factor. This means, that one 
-                            // 'Speed-tic' is 0,125 µs per 20ms cycle. This gives better resolution in defining the speed.
-                            // Only when computing the next interrupt time the values are divided by this value again to get
-                            // the real 'timer tics'
+#ifdef SPEED_RES
+constexpr uint8_t INC_PER_TIC = SPEED_RES; // set to '1' in drivers.h for ESP32 and ESP8266
+#else
+constexpr uint8_t INC_PER_TIC = INC_PER_MICROSECOND / TICS_PER_MICROSECOND;
 #endif
 #ifndef time2tic
-    #define time2tic(pulse)  ( (pulse) *  TICS_PER_MICROSECOND * SPEED_RES )
-    #define tic2time(tics)  ( (tics) / TICS_PER_MICROSECOND / SPEED_RES )
+    #define time2tic(pulse)  ( (pulse) *  INC_PER_MICROSECOND )
+    #define tic2time(tics)  ( (tics) / INC_PER_MICROSECOND )
 #endif
 #ifndef AS_Speed2Inc
 #define AS_Speed2Inc(speed) (speed)
@@ -54,11 +65,11 @@ struct servoData_t {
                         // on ESP32 'soll' 'ist' and 'inc' are in duty values (  0... DUTY100 )
   int soll;             // Position, die der Servo anfahren soll ( in Tics ). -1: not initialized
   volatile int ist;     // Position, die der Servo derzeit einnimt ( in Tics )
-  int inc;              // Schrittweite je Zyklus um Ist an Soll anzugleichen
+  int inc;              // Schrittweite je Zyklus um Ist an Soll anzugleichen( in Tics )
   uint8_t offcnt;       // counter to switch off pulses if length doesn't change
   #ifdef FAST_PORTWRT
-  uint8_t* portAdr;     // port adress related to pin number
-  uint8_t  bitMask;     // bitmask related to pin number
+  volatile uint8_t* portAdr;     // port adress related to pin number
+  volatile uint8_t  bitMask;     // bitmask related to pin number
   #endif
   uint8_t pin     ;     // pin
   int8_t pwmNbr;        // pwm channel on ESP32 , -1 means not attached on all platforms
@@ -96,6 +107,7 @@ class MoToServo
     void setSpeed(int,bool); // Set compatibility-Flag (true= compatibility with version V08 and earlier)
     #define HIGHRES 0
     #define SPEEDV08 1
+	void setSpeedTime(uint16_t  );  // set Speed as time between 0...180° in milliseconds
     
     uint8_t moving();        // returns the remaining Way to the angle last set with write() in
                              // in percentage. '0' means, that the angle is reached

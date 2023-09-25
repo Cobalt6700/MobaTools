@@ -24,7 +24,7 @@ inline __attribute__((__always_inline__)) void  _stepIRQ(bool force = true) {
 
 //returns the channelnumber ( 0...15 ) of the leds channel to be used, or -1 if no channel is availabele
 static inline __attribute__((__always_inline__)) int8_t servoPwmSetup( servoData_t *servoDataP ) {
-    DB_PRINT("Search fre ledc channel")
+    //DB_PRINT("Search fre ledc channel");
     int8_t pwmNbr = initPwmChannel( servoDataP->pin, SERVO_TIMER );
     pinMode( servoDataP->pin, OUTPUT );
     attachInterruptArg( servoDataP->pin, ISR_Servo, (void*)servoDataP, FALLING );
@@ -119,19 +119,19 @@ static inline __attribute__((__always_inline__)) void attachInterruptAS(  ledDat
         if ( spiInitialized ) return;
         // initialize SPI hardware.
         // MSB first, default Clk Level is 0, shift on leading edge
-        spiHs = spiStartBusMoTo(SPI_USED, SPI_CLOCK_DIV4, SPI_MODE0, SPI_MSBFIRST);
+        spiHs = spiStartBus(SPI_USED, SPI_CLOCK_DIV4, SPI_MODE0, SPI_MSBFIRST);
         //if ( spiHs == NULL ) Serial.println( "Init SPI failed");
-        spiAttachSCKMoTo(spiHs, SCK);
+        spiAttachSCK(spiHs, SCK);
         // MISO is not used, only serial output
-        spiAttachMOSIMoTo(spiHs, MOSI);
-        spiAttachSSMoTo(spiHs, 0, SS);
-        spiSSEnableMoTo(spiHs);
+        spiAttachMOSI(spiHs, MOSI);
+        spiAttachSS(spiHs, 0, SS);
+        spiSSEnable(spiHs);
 
         spiInitialized = true;  
     }
 
     static inline __attribute__((__always_inline__)) void startSpiWriteAS( uint8_t spiData[] ) {
-       spiWriteShortNLMoTo(spiHs, (spiData[1]<<8) + spiData[0] );
+       spiWriteShortNL(spiHs, (spiData[1]<<8) + spiData[0] );
     }    
     
 

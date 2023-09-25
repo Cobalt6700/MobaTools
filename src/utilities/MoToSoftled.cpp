@@ -6,7 +6,7 @@
   Functions for the stepper part of MobaTools
 */
 
-#ifdef ARDUINO_ARCH_AVR  //this is only for 8Bit AVR controllers
+#if defined ARDUINO_ARCH_AVR || defined ARDUINO_ARCH_MEGAAVR //this is only for 8Bit AVR controllers
 #define COMPILING_MOTOSOFTLED_CPP
 
 
@@ -239,8 +239,8 @@ uint8_t MoToSoftLed::attach(uint8_t pinArg, uint8_t invArg ){
     }
     
     #ifdef FAST_PORTWRT
-    _ledData.portPin.Adr = (byte *) pgm_read_word_near(&port_to_output_PGM[pgm_read_byte_near(&digital_pin_to_port_PGM[pinArg])]);
-    _ledData.portPin.Mask = pgm_read_byte_near(&digital_pin_to_bit_mask_PGM[pinArg]);
+    _ledData.portPin.Adr = portOutputRegister(digitalPinToPort(pinArg));
+    _ledData.portPin.Mask = digitalPinToBitMask(pinArg);
     #else
     _ledData.pin=pinArg ;      // Pin-Nbr 
     #endif
@@ -250,7 +250,7 @@ uint8_t MoToSoftLed::attach(uint8_t pinArg, uint8_t invArg ){
     #if defined(__AVR_ATmega8__)|| defined(__AVR_ATmega128__)
         TIMSK |= ( _BV(OCIExB) );    // enable compare interrupts
     #else
-        TIMSKx |= _BV(OCIExB) ; 
+        _stepIRQ() ; // Softled uses same IRQ as steppers
     #endif
     DB_PRINT("IX_MAX=%d, CYCLE_MAX=%d, PWMTIME=%d", LED_IX_MAX, LED_CYCLE_MAX, LED_PWMTIME );
     return true;

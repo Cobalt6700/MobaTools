@@ -27,6 +27,10 @@ static inline __attribute__((__always_inline__)) void  _stepIRQ(bool force = fal
     }
 }
 
+static inline __attribute__((__always_inline__)) void nestedInterrupts() {
+	//to reenable interrupts within an ISR
+	interrupts(); 
+}
 /////////////////////////////////////////////////////////////////////////////////////////////////
 #if defined COMPILING_MOTOSERVO_CPP
 static inline __attribute__((__always_inline__)) void enableServoIsrAS() {
@@ -78,7 +82,7 @@ extern uint8_t bitSS;;
         if ( spiInitialized ) return;
         // initialize SPI hardware.
         // MSB first, default Clk Level is 0, shift on leading edge
-        uint8_t oldSREG = SREG;
+        const uint8_t oldSREG = SREG;
         cli();
         pinMode( MOSI, OUTPUT );
         pinMode( SCK, OUTPUT );

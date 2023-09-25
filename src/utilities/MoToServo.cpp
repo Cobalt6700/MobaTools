@@ -25,6 +25,8 @@ static bool speedV08 = false;    // Compatibility-Flag for speed method
 // computes the length of the next pulse. The pulse itself is created by the core_esp8266_waveform routines or by ledPWM HW ( ESP32 )
 void IRAM_ATTR ISR_Servo( void *arg ) {
     servoData_t *_servoData = static_cast<servoData_t *>(arg);
+	// On ESP32 the IRQ fires at start AND end of the pulse, ignore leading edge
+	if ( digitalRead( _servoData->pin) == HIGH ) return ;
     portENTER_CRITICAL_ISR(&servoMux);
     SET_TP2;
     if ( _servoData->ist != _servoData->soll ) {
@@ -39,7 +41,7 @@ void IRAM_ATTR ISR_Servo( void *arg ) {
         }
         //CLR_TP1;
         //Serial.println(_servoData->ist );
-            servoWrite( _servoData, _servoData->ist/SPEED_RES ); 
+            servoWrite( _servoData, _servoData->ist/INC_PER_TIC ); 
         //SET_TP1;
         //CLR_TP1;
     } else if ( !_servoData->noAutoff ) { // no change in pulse length, look for autooff
@@ -50,7 +52,7 @@ void IRAM_ATTR ISR_Servo( void *arg ) {
         }
     }
     portEXIT_CRITICAL_ISR(&servoMux);
-    //CLR_TP2;
+    CLR_TP2;
 }
 #endif //IS_ESP
 
@@ -103,10 +105,12 @@ static bool searchNextPulse() {
 } //end of 'searchNextPulse'
 
 // ---------- OCRxA Compare Interrupt used for servo motor (overlapping pulses) ----------------
-#ifdef ARDUINO_ARCH_AVR
+// not for ESP processors
+#if defined ( ARDUINO_ARCH_AVR ) 
 ISR ( TIMERx_COMPA_vect) {
-    uint8_t saveTIMSK;
-    saveTIMSK = TIMSKx; // restore IE for stepper later ( maybe it is not enabled)
+#elif defined  (ARDUINO_ARCH_MEGAAVR )
+ISR (TCA0_CMP0_vect) {
+	TCA0.SINGLE.INTFLAGS = TCA_SINGLE_CMP0_bm;	// Reset IRQ-flag
 #elif defined __STM32Fx__
 void ISR_Servo( void) {
     uint16_t OCRxA = 0;
@@ -131,7 +135,6 @@ void ISR_Servo( void) {
             // lay after endtime of runningpuls + safetymargin (it may be necessary to start
             // another pulse between these 2 ends)
             long tmpTCNT1 = GET_COUNT + MARGINTICS/2;
-            _noStepIRQ();   // Stepper IRQ may be too long and must not interrupt the servo IRQ 
             //CLR_TP3 ;
             OCRxA = max ( (long)((long)activePulseOff + (long) MARGINTICS - (long) nextPulseLength), tmpTCNT1 );
         } else {
@@ -168,14 +171,13 @@ void ISR_Servo( void) {
                 digitalWrite( nextPulseP->pin, HIGH );
                 #endif
             }
-            _noStepIRQ(); // Stepper ISR may be too long  and must not interrupt the servo IRQ
             //SET_TP3;
             // the 'nextPulse' we have started now, is from now on the 'activePulse', the running activPulse is now the
             // pulse to stop next.
             stopPulseP = activePulseP; // because there was a 'nextPulse' there is also an 'activPulse' which is the next to stop
             OCRxA = activePulseOff;
             activePulseP = nextPulseP;
-            activePulseOff = activePulseP->ist/SPEED_RES + tmpTCNT1; // end of actually started pulse
+            activePulseOff = activePulseP->ist/INC_PER_TIC + tmpTCNT1; // end of actually started pulse
             nextPulseLength = 0;
             //SET_TP1;
         }
@@ -186,7 +188,7 @@ void ISR_Servo( void) {
                 //TOG_TP2;
                 SET_TP3;
                 activePulseP = pulseP; 
-                activePulseOff = pulseP->ist/SPEED_RES + GET_COUNT - 4; // compensate for computing time
+                activePulseOff = pulseP->ist/INC_PER_TIC + GET_COUNT - 4; // compensate for computing time
                 if ( pulseP->on && (pulseP->offcnt+pulseP->noAutoff) > 0 ) {
                     // its a 'real' pulse, set output pin
                     #ifdef FAST_PORTWRT
@@ -196,7 +198,6 @@ void ISR_Servo( void) {
                     #endif
                 }
                 int32_t tmpTCNT1 = GET_COUNT+ MARGINTICS/2;
-                _noStepIRQ(); // Stepper ISR may be too long  and must not interrupt the servo IRQ
                 //SET_TP3;
                 // look for second pulse
                 //SET_TP4;
@@ -204,7 +205,7 @@ void ISR_Servo( void) {
                 //CLR_TP4;
                 if ( searchNextPulse() ) {
                     // there is a second pulse - this is the 'nextPulse'
-                    nextPulseLength = pulseP->ist/SPEED_RES;
+                    nextPulseLength = pulseP->ist/INC_PER_TIC;
                     nextPulseP = pulseP;
                     //SET_TP4;
                     pulseP = pulseP->prevServoDataP;
@@ -221,7 +222,7 @@ void ISR_Servo( void) {
                 CLR_TP3;
             } else {
                 // its a pulse in sequence, so this is the 'nextPulse'
-                nextPulseLength = pulseP->ist/SPEED_RES;
+                nextPulseLength = pulseP->ist/INC_PER_TIC;
                 nextPulseP = pulseP;
                 //SET_TP4;
                 pulseP = pulseP->prevServoDataP;
@@ -247,10 +248,6 @@ void ISR_Servo( void) {
     timer_set_compare(MT_TIMER,  SERVO_CHN, OCRxA);
     #endif 
     //CLR_TP1; CLR_TP3; // Oszimessung Dauer der ISR-Routine
-    #ifdef ARDUINO_ARCH_AVR
-    TIMSKx = saveTIMSK;      // retore Interrupt enable reg
-    #endif
-    _stepIRQ();
     CLR_TP2;
 }
 
@@ -316,17 +313,17 @@ uint8_t MoToServo::attach( int pinArg, uint16_t pmin, uint16_t pmax, bool autoOf
 	DB_PRINT( "pin: %d, pmin:%d pmax%d autoOff=%d", pinArg, pmin, pmax, autoOff);
     
     // intialize objectspecific data
-    _lastPos = 1500*TICS_PER_MICROSECOND*SPEED_RES ;    // initalize to middle position
+    _lastPos = 1500*TICS_PER_MICROSECOND*INC_PER_TIC ;    // initalize to middle position
     _servoData.soll = -1;  // invalid position -> no pulse output
     _servoData.ist = -1;   
-    _servoData.inc = 2000*SPEED_RES;  // means immediate movement
+    _servoData.inc = 8000;  // means immediate movement
     _servoData.pin = pinArg;
     _servoData.on = false;  // create no pulses until next write
     _servoData.noAutoff = autoOff?0:1 ;  
     #ifdef FAST_PORTWRT
     // compute portaddress and bitmask related to pin number
-    _servoData.portAdr = (byte *) pgm_read_word_near(&port_to_output_PGM[pgm_read_byte_near(&digital_pin_to_port_PGM[ pinArg])]);
-    _servoData.bitMask = pgm_read_byte_near(&digital_pin_to_bit_mask_PGM[pinArg]);
+    _servoData.portAdr = portOutputRegister(digitalPinToPort(pinArg));
+    _servoData.bitMask = digitalPinToBitMask(pinArg);
     DB_PRINT( "Idx: %d Portadr: 0x%x, Bitmsk: 0x%x", _servoData.servoIx, _servoData.portAdr, _servoData.bitMask );
 	#endif
     pinMode (_servoData.pin,OUTPUT);
@@ -352,7 +349,7 @@ uint8_t MoToServo::attach( int pinArg, uint16_t pmin, uint16_t pmax, bool autoOf
         }
          interrupts();
     #endif // no ESP8266
-    DB_PRINT("OVLMARGIN=%d, OVL_TICS=%d, MARGINTICS=%d, SPEEDRES=%d", OVLMARGIN, OVL_TICS, MARGINTICS, SPEED_RES );
+    DB_PRINT("OVLMARGIN=%d, OVL_TICS=%d, MARGINTICS=%d, SPEEDRES=%d, TPM4=%d", (int16_t) OVLMARGIN, (int16_t)OVL_TICS, (int16_t)MARGINTICS, (int16_t)INC_PER_TIC, (int)(TICS_PER_MICROSECOND*4) );
     //return ( _servoData.pwmNbr >= 0 );
     return ( _servoData.pwmNbr +1 );
 }
@@ -432,15 +429,16 @@ void MoToServo::write(uint16_t angleArg)
             if ( (startPulse) || (_servoData.offcnt+_servoData.noAutoff) == 0  ) {
                 SET_TP3;
                 // first pulse after attach, or pulses have been switch off by autoff
-                startServoPulse( &_servoData, _servoData.ist/SPEED_RES);
+                startServoPulse( &_servoData, _servoData.ist/INC_PER_TIC);
                 DB_PRINT( "start pulses at pin %d, ist=%d, soll=%d", _servoData.pin, _servoData.ist, _servoData.soll );
                 CLR_TP3;
             }
         #endif
         _servoData.offcnt = OFF_COUNT;   // auf jeden Fall wieder Pulse ausgeben
     }
-    //DB_PRINT( "Soll=%d, Ist=%d, Ix=%d, inc=%d, SR=%d, Duty100=%d, LEDC_BITS=%d", _servoData.soll,_servoData.ist, _servoData.servoIx, _servoData.inc, SPEED_RES, DUTY100, LEDC_BITS );
-    DB_PRINT( "Soll=%d, Ist=%d, Ix=%d, inc=%d, SR=%d", _servoData.soll,_servoData.ist, _servoData.servoIx, _servoData.inc, SPEED_RES );
+    //DB_PRINT( "Soll=%d, Ist=%d, Ix=%d, inc=%d, SR=%d, Duty100=%d, LEDC_BITS=%d", _servoData.soll,_servoData.ist, _servoData.servoIx, _servoData.inc, INC_PER_TIC, DUTY100, LEDC_BITS );
+    DB_PRINT( "Soll=%d, Ist=%d, Ix=%d, inc=%d, SR=%d", _servoData.soll,_servoData.ist, _servoData.servoIx, _servoData.inc, (int)INC_PER_TIC );
+	DB_PRINT( "t2tic=%d, tic2t=%d", (int)time2tic(map( angleArg, 0,180, _minPw, _maxPw)), (int)tic2time(_servoData.soll ) );
     //delay(2);
     //CLR_TP1;
 }
@@ -448,6 +446,18 @@ void MoToServo::write(uint16_t angleArg)
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
+void MoToServo::setSpeedTime(uint16_t minMaxTime ) {
+	// Set speed as time (in milliseconds) needed when moving from 0° ... 180°
+	//uint16_t maxTics = time2tic ( _maxPw - _minPw );
+	uint16_t maxTics = 8* ( _maxPw - _minPw );	//	tics are counted in 0.125 µs
+	uint16_t speedCycles = minMaxTime / 20;	// Nbr of pulses needed from 0° to 180°
+	if ( speedCycles == 0 ) speedCycles = 1;	// Avoid divide by zero
+	uint16_t speedTics = maxTics / speedCycles;
+	setSpeed( speedTics, HIGHRES );	// no compatibility mode, when new speed method is used
+}
+	
+	
+	
 void MoToServo::setSpeed( int speed, bool compatibility ) {
     // set global compatibility-Flag
     #ifndef IS_ESP
@@ -459,9 +469,9 @@ void MoToServo::setSpeed( int speed, bool compatibility ) {
 
 void MoToServo::setSpeed( int speed ) {
     // Set increment value for movement to new angle
-    // 'speed' is 0,5µs increment per 20ms
+    // 'speed' is 0,125µs increment per 20ms
     if ( _servoData.pwmNbr != NOT_ATTACHED ) { // only if servo is attached
-        if ( speedV08 ) speed *= SPEED_RES;
+        if ( speedV08 ) speed *= COMPAT_FACT;
         speed = constrain(  speed, 0, 8000 );  // 8000 means immediate movement, greater values make no sense
                                         // Greater Values will also lead to an overflow on ESP32
         noInterrupts();
@@ -495,7 +505,7 @@ uint16_t MoToServo::readMicroseconds() {
     value = _servoData.ist;
     interrupts();
     if ( value < 0 ) value = _servoData.soll; // there is no valid actual vlaue
-    //DB_PRINT( "Ist=%d, Soll=%d, TpM=%d, SR=%d", value, _servoData.soll, TICS_PER_MICROSECOND, SPEED_RES );
+    //DB_PRINT( "Ist=%d, Soll=%d, TpM=%d, SR=%d", value, _servoData.soll, TICS_PER_MICROSECOND, INC_PER_TIC );
     return tic2time( value );   
 }
 

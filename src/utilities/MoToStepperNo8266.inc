@@ -11,7 +11,66 @@ uint8_t spiStepperData[2]; // step pattern to be output on SPI
                             // high nibble of spiStepperData[1] is SPI_4
                             // spiStepperData[1] is shifted out first
 
-
+bool IRAM_ATTR setStepperPins( stepperData_t *stepperDataP, uint8_t stepPattern ) {
+	// setting 4-pin stepperdata to enable/disable the stepper
+	//CLR_TP2;SET_TP2;
+	// store pattern data
+	bool spiChanged = false;
+	switch ( stepperDataP->output ) {
+	  #if defined PORTD && defined PORTB && defined ARDUINO_ARCH_AVR
+	  case PIN4_7:
+		PORTD = (PORTD & 0x0f) | ( stepPattern <<4 );   
+		break;
+	  case PIN8_11:
+		PORTB = (PORTB & 0xf0) | ( stepPattern );   
+		break;
+	  #endif
+	  case SPI_1:
+		//SET_TP2;
+		spiStepperData[0] = (spiStepperData[0] & 0xf0) | ( stepPattern );
+		spiChanged = true; 
+		//CLR_TP2;
+		break;
+	  case SPI_2:
+		spiStepperData[0] = (spiStepperData[0] & 0x0f) | ( stepPattern <<4 );
+		spiChanged = true;
+		//CLR_TP2;
+		break;
+	  case SPI_3:
+		spiStepperData[1] = (spiStepperData[1] & 0xf0) | ( stepPattern );   
+		spiChanged = true;
+		break;
+	  case SPI_4:
+		spiStepperData[1] = (spiStepperData[1] & 0x0f) | ( stepPattern <<4 );
+		spiChanged = true;
+		break;
+	#ifdef ESP32 // !!! Auf ESP32 darf ein switch in ISR max 4 case-Blöcke enthalten !!!!
+	}
+	switch ( stepperDataP->output ) {
+	#endif
+	  case SINGLE_PINS : // Outpins are individually defined
+		for ( uint8_t bitNr = 0; bitNr < 4; bitNr++ ) {
+			if ( stepPattern & (1<<bitNr) ) {
+				#ifdef FAST_PORTWRT
+				*stepperDataP->portPins[bitNr].Adr |= stepperDataP->portPins[bitNr].Mask;
+				#else
+				digitalWrite( stepperDataP->pins[bitNr], HIGH );
+				#endif
+			} else {
+				#ifdef FAST_PORTWRT
+				*stepperDataP->portPins[bitNr].Adr &= ~stepperDataP->portPins[bitNr].Mask;
+				#else    
+				digitalWrite( stepperDataP->pins[bitNr], LOW );
+				#endif    
+			}
+		}
+		break;
+	  default:
+		// should never be reached
+		break;
+	}
+	return spiChanged;
+}
 
 #pragma GCC optimize "O3"   // optimize ISR for speed
 void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
@@ -22,7 +81,7 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
     //SET_TP1;SET_TP4; // Oszimessung Dauer der ISR-Routine
     spiChanged = false;
     #ifdef __AVR_MEGA__
-    interrupts(); // allow nested interrupts, because this IRQ may take long
+    nestedInterrupts(); // allow nested interrupts, because this IRQ may take long
     #endif
     stepperDataP = stepperRootP;
     // ---------------Stepper motors ---------------------------------------------
@@ -43,13 +102,15 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
             interrupts();
             #else
             digitalWrite( stepperDataP->pins[0], HIGH );
+			#ifdef IS_32BIT
             resetPulse = true;
+			#endif
             #endif
             //CLR_TP2;
         }
-        if ( stepperDataP->rampState >= rampStat::CRUISING ) {
+        if ( stepperDataP->rampState >= rampStat::CRUISING &&  stepperDataP->speedZero != ZEROSPEEDACTIVE ) {
             //SET_TP3;
-            // only active motors
+            // only active motors with speed > 0
             if ( stepperDataP->aCycSteps ) stepperDataP->cycCnt+=cyclesLastIRQ;
             #ifdef IS_32BIT
             if ( stepperDataP->cycCnt >= ( stepperDataP->aCycSteps ) && !resetPulse ) {
@@ -84,7 +145,7 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
                 noInterrupts(); // because of read modify write actions in setting outputs
                 #endif
                 switch ( stepperDataP->output ) {
-                  #if defined PORTD && defined PORTB
+                  #if defined PORTD && defined PORTB && defined ARDUINO_ARCH_AVR
                   case PIN4_7:
                     PORTD = (PORTD & 0x0f) | ( stepPattern[ _patIx ] <<4 );   
                     break;
@@ -183,7 +244,7 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
                         stepperDataP->rampState = rampStat::RAMPACCEL;
                     } else {
                         stepperDataP->stepsInRamp = 0;      // we cannot be in ramp when stopped
-                        if (stepperDataP->enablePin != 255) {
+                        if (stepperDataP->enablePin != NO_STEPPER_ENABLE) {
                             // enable is active, wait for disabling
                             stepperDataP->aCycSteps = stepperDataP->cycDelay;
                             stepperDataP->rampState = rampStat::STOPPING;
@@ -272,9 +333,18 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
                             #ifndef IS_32BIT
                             stepperDataP->aCycRemain = 0;
                             #endif
+							if ( stepperDataP->speedZero == DECELSPEEDZERO ) {
+								//target speed was 0, create no more steps
+								stepperDataP->speedZero = ZEROSPEEDACTIVE;
+								// if enabe is active, start Time until disabling the motor
+								if (stepperDataP->enablePin != NO_STEPPER_ENABLE) {
+									// enable is active, wait for disabling
+									stepperDataP->aCycSteps = stepperDataP->cycDelay;
+									stepperDataP->rampState = rampStat::STOPPING;
+								}   
+							}
                             //CLR_TP2;
                         }
-                        //ToDo - do we have to stop the motor
                     }
                     break;
                     
@@ -315,17 +385,36 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
             nextCycle = (nextCycle_t)min ( (uintxx_t)nextCycle, (uintxx_t)stepperDataP->aCycSteps-stepperDataP->cycCnt );
             //CLR_TP3;
         } // end of 'if stepper active AND moving'
-        else if ( stepperDataP->rampState == rampStat::STARTING ) {
-            // we start with enablepin active ( cycCnt is already set to 0 )
+        else if ( stepperDataP->rampState == rampStat::STARTING && stepperDataP->speedZero != ZEROSPEEDACTIVE ) {
+            // we start with enable function active ( cycCnt is already set to 0 )
+			// enable the motor and wait delaytime (cycDelay) before executing first step.
+			// if no enablepin is defined, the steppattern must be set to the last active pattern.
+			if ( stepperDataP->enablePin == NO_ENABLEPIN ) {
+				// set motorwires to last pattern ( when disabling the outputs )
+				spiChanged = setStepperPins( stepperDataP, stepPattern[ stepperDataP->patternIx ] );
+			}
+			else {
+				// set enablePin to active
+				digitalWrite( stepperDataP->enablePin, stepperDataP->enable );
+			}
             stepperDataP->aCycSteps = stepperDataP->cycDelay;
             if ( stepperDataP->stepRampLen > 0 ) stepperDataP->rampState = rampStat::RAMPACCEL;
             else                                stepperDataP->rampState = rampStat::CRUISING;
             nextCycle = (nextCycle_t)min ( (uintxx_t)nextCycle, (uintxx_t)stepperDataP->aCycSteps );
-        } else if ( stepperDataP->rampState == rampStat::STOPPING  ) {
+        } 
+		else if ( stepperDataP->rampState == rampStat::STOPPING  ) {
+			// Check if time between last step and disabling the motor has elapsed
             stepperDataP->cycCnt+=cyclesLastIRQ;
             if ( stepperDataP->cycCnt >= stepperDataP->aCycSteps ) {
                 stepperDataP->cycCnt = 0;
-                digitalWrite( stepperDataP->enablePin, !stepperDataP->enable );
+				if ( stepperDataP->enablePin == NO_ENABLEPIN ) {
+					// set motorwires to 0 to disable the motor
+					spiChanged = setStepperPins( stepperDataP, 0 );
+				} 
+				else {
+					// set enablePin to inactive
+					digitalWrite( stepperDataP->enablePin, !stepperDataP->enable );
+				}
                 stepperDataP->rampState = rampStat::STOPPED;
             }
         }
@@ -346,7 +435,7 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
 } // ==================== End of stepper ISR ======================================
 #pragma GCC optimize "Os"
 
-uintxx_t MoToStepper::setSpeedSteps( uintxx_t speed10, int rampLen ) {
+uintxx_t MoToStepper::setSpeedSteps( uintxx_t speed10, intxx_t rampLen ) {
     // Set speed and length of ramp to reach speed ( from stop )
     // neagtive ramplen means it was set automatically
      SET_TP4;
@@ -370,7 +459,35 @@ uintxx_t MoToStepper::setSpeedSteps( uintxx_t speed10, int rampLen ) {
     if (rampLen<0) newRampLen--;
     if (newRampLen > MAXRAMPLEN ) newRampLen = MAXRAMPLEN;
     newSpeed10 = min( uintxx_t(1000000L / MIN_STEPTIME * 10), speed10 );
-	if ( newSpeed10 == 0 ) newSpeed10 = 1; // minimum speed
+	_noStepIRQ();
+	if ( newSpeed10 == 0) {
+		if ( _chkRunning() ) { 
+			// stepper is moving, we hahe to stop it
+			if ( _stepperData.stepRampLen > 0) {
+				_stepperData.speedZero = DECELSPEEDZERO;	// there is a ramp, flag for ramping down to speed 0
+			} else {
+				// no ramp, simply inhibit creating pulses, disable stepper if needed.
+				_stepperData.speedZero = ZEROSPEEDACTIVE;				
+				if (_stepperData.enablePin != NO_STEPPER_ENABLE ) {
+					_stepperData.aCycSteps = _stepperData.cycDelay;
+					_stepperData.rampState = rampStat::STOPPING;
+				}
+			}
+		} else { 
+		  // Stepper doesn't move, only inhibit starting
+			_stepperData.speedZero = ZEROSPEEDACTIVE;	// set stepper inactive ( no ISR action )
+		}  
+		newSpeed10 = MINSPEEDZERO; // minimum speed in ramp before stopping
+	} else {
+		if (_stepperData.enablePin != NO_STEPPER_ENABLE && _stepperData.speedZero == ZEROSPEEDACTIVE ) {
+			// We are starting from zero speed and enable is active, wait for enabling
+			_stepperData.aCycSteps = _stepperData.cycDelay;
+			_stepperData.rampState = rampStat::STARTING;
+		}   
+		_stepperData.speedZero = NORMALSPEED;
+	}
+	_stepIRQ(true);
+	
     
     // compute target steplength and check whether speed and ramp fit together: 
 	#ifdef IS_32BIT
@@ -436,7 +553,7 @@ uintxx_t MoToStepper::setSpeedSteps( uintxx_t speed10, int rampLen ) {
                 if ( newStepsInRamp > newRampLen ) {
                     //  ==========  we are too fast ============================
                         //Serial.print(" --");
-                        //DB_PRINT ( "Slower: %u/%u -> %u/%u", _stepSpeed10,_stepperData.stepRampLen,  newSpeed10, newRampLen );
+                        DB_PRINT ( "Slower: %u/%u -> %u/%u", _stepSpeed10,_stepperData.stepRampLen,  newSpeed10, newRampLen );
                         newRampState = rampStat::SPEEDDECEL;
                         if ( _stepperData.stepsInRamp == 0 ) {
                             newDeltaSteps = ((10L * newStepsInRamp)+5 )/10L;
@@ -444,7 +561,7 @@ uintxx_t MoToStepper::setSpeedSteps( uintxx_t speed10, int rampLen ) {
                             newDeltaSteps = ((10L * newStepsInRamp / _stepperData.stepsInRamp)+5 )/10L;
                         }
                         if ( newDeltaSteps < 1 ) newDeltaSteps = 1;
-                    
+                        DB_PRINT ( "Slower: %u/%u -> %u/%u, delat=%u", _stepSpeed10,_stepperData.stepRampLen,  newSpeed10, newRampLen, newDeltaSteps );
                 } else  {
                     //  ==========  we are too slow ============================
                     //Serial.print(" ++"); 
@@ -456,7 +573,7 @@ uintxx_t MoToStepper::setSpeedSteps( uintxx_t speed10, int rampLen ) {
             }
 
             // Check whether we can reach targetposition with new values
-            if ( newStepsInRamp > (__stepCnt - _stepperData.stepCnt2) ) {
+            if ( newStepsInRamp/newDeltaSteps > (__stepCnt - _stepperData.stepCnt2) ) {
                 // we cannot reach the tagetposition, so we go beyond the targetposition and than back.
                 // This works even if we are already beyond the target position
                 //Serial.print( " ><");
@@ -475,7 +592,7 @@ uintxx_t MoToStepper::setSpeedSteps( uintxx_t speed10, int rampLen ) {
             _stepperData.stepCnt = __newStepCnt;
             _stepperData.stepCnt2 = __newStepCnt2;
         }
-    }
+    } 
     
     _stepperData.tCycSteps = tCycSteps;
 	#ifndef IS_32BIT
@@ -484,7 +601,7 @@ uintxx_t MoToStepper::setSpeedSteps( uintxx_t speed10, int rampLen ) {
     _stepperData.cyctXramplen = newCyctXramplen;
     _stepperData.stepRampLen = newRampLen;
     _stepIRQ(true); CLR_TP4;
-    _stepSpeed10 = newSpeed10;
+    _stepSpeed10 = speed10 == 0? 0 : newSpeed10;
     CLR_TP4;
     prDynData();
     return _stepperData.stepRampLen;
@@ -515,20 +632,21 @@ void MoToStepper::prDynData() {             // print actual Stepperdata
     printData.rampState = _stepperData.rampState;           // State of acceleration/deceleration
     printData.stepsFromZero = _stepperData.stepsFromZero;   // distance from last reference point 
     printData.deltaSteps = _stepperData.deltaSteps;         // number of computed steps per real step in SPEEDDECEL
+	printData.speedZero  = _stepperData.speedZero;
     prNextCycle = nextCycle;
     _stepIRQ();
-    /*uint32_t time = micros();
+    uint32_t time = micros();
     uint16_t usec = time%1000; time /=1000;
     uint16_t msec = time%1000; time /= 1000;
     DB_PRINT("Time:%5lu:%03u,%03u\t stepCnt=%5lu\t stepCnt2=%5lu\t sFZ=%5ld", time, msec,usec,printData.stepCnt, printData.stepCnt2, printData.stepsFromZero );
-	*/
+	
     #ifdef IS_32BIT
     DB_PRINT("tCySteps=%5u\t # aCySteps=%5u\t ", (unsigned int)printData.tCycSteps,(unsigned int)printData.aCycSteps);
 	#else
     DB_PRINT("tCySteps=%5u\t tCyRemain=%5u\t aCySteps=%5u\t aCyRemain=%5u", printData.tCycSteps,printData.tCycRemain,printData.aCycSteps,printData.aCycRemain);
 	#endif
-    //DB_PRINT(" XrampL=%5u\t rampLen=%4u\t stepsInRamp=%4u\t, rampState=%s(%u)",printData.cyctXramplen,printData.stepRampLen,printData.stepsInRamp,rsC[(int)printData.rampState],(int)printData.rampState);
-    //DB_PRINT("dltaStp=%4d,\t cycnt=%4ld, nextCyc=%4d", printData.deltaSteps, printData.cycCnt, prNextCycle );
+    DB_PRINT(" XrampL=%5u\t rampLen=%4u\t stepsInRamp=%4u\t, rampState=%s(%u)",printData.cyctXramplen,printData.stepRampLen,printData.stepsInRamp,rsC[(int)printData.rampState],(int)printData.rampState);
+    DB_PRINT("deltaStp=%4d,\t speedFlg=%d cycnt=%4ld, nextCyc=%4d", printData.deltaSteps, printData.speedZero, printData.cycCnt, prNextCycle );
 
     Serial.println("^^^^^^^^^^^^^^ISR-Data^^^^^^^^^^^^^^^^");
     #endif

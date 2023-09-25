@@ -10,8 +10,9 @@
 
 // defines for the stepper motor
 #define NOSTEP      0   // invalid-flag
-#define HALFSTEP    1
-#define FULLSTEP    2
+// The numbers for FULLSTEP and HALFSTEP must not be changed!
+#define HALFSTEP    1	// in HALFSTEP steps are counted in increments of 1 ( same like STEPDIR )
+#define FULLSTEP    2	// in FULLSTEP the steps are  counted in increments of 2
 #define A4988       3   // using motordriver A4988
 #define STEPDIR		3	// all motordrivers with a step und dir input ( same as A4988 )
 
@@ -34,7 +35,8 @@
 #define A4988_PINS      8
 
 
-#define CYCLETICS       (CYCLETIME*TICS_PER_MICROSECOND)
+// #define CYCLETICS       (CYCLETIME*TICS_PER_MICROSECOND)
+constexpr uint16_t CYCLETICS   =  (CYCLETIME*TICS_PER_MICROSECOND);
 #define MIN_START_CYCLES 4000/CYCLETIME  // 5ms min until first step if stepper is in stop
 #define MIN_STEPTIME    (CYCLETIME * MIN_STEP_CYCLE) 
 #ifdef IS_32BIT
@@ -50,14 +52,19 @@
 
 /////////////////////////////////////////////////////////////////////////////////
 // global stepper data ( used in ISR )
-enum class rampStat:byte { INACTIVE, STOPPED, STOPPING, STARTING, CRUISING, LASTSTEP, RAMPACCEL, RAMPDECEL, SPEEDDECEL  };
+enum class rampStat:byte { INACTIVE, STOPPED, SPEED0, STOPPING, STARTING, CRUISING, LASTSTEP, RAMPACCEL, RAMPDECEL, SPEEDDECEL  };
+/*
 // states from CRUISING and above mean that the motor is moving
+// STOPPING: Motor does not move - waiting for disabling the motor.
+// SPEED0:	 motor is stopped because speed is set to 0, target is not yet reached ( esp. for ESP8266 )
+// STARTING: motor does not yet move, waiting time after enable
+*/
 typedef struct stepperData_t {
   struct stepperData_t *nextStepperDataP;    // chain pointer
   volatile uint32_t stepCnt;        // nmbr of steps to take
   uint32_t stepCnt2;                // nmbr of steps to take after automatic reverse
   volatile int8_t patternIx;    // Pattern-Index of actual Step (0-7)
-  int8_t   patternIxInc;        // halfstep: +/-1, fullstep: +/-2, A4988 +1/-1  the sign defines direction
+  int8_t   patternIxInc;        // halfstep: +/-1, fullstep: +/-2, STEPDIR +1/-1  the sign defines direction
   #ifdef ESP8266
 	// on 32Bit-platforms all time values are in µs
 	uint32_t tCycSteps;           // µseconds per step ( target value of motorspeed  )
@@ -89,9 +96,18 @@ typedef struct stepperData_t {
   uint8_t output  :6 ;             // PORTB(pin8-11), PORTD (pin4-7), SPI0,SPI1,SPI2,SPI3, SINGLE_PINS, A4988_PINS
   uint8_t delayActiv :1;        // enable delaytime is running
   uint8_t enable:1;             // true: enablePin=HIGH is active, false: enablePin=LOW is active
-  uint8_t enablePin;            // define an enablePin, which is active while the stepper is moving (255: no pin defined)
+  uint8_t enablePin;            // define an enablePin, which is active while the stepper is moving 
+								// 255: enable is not active, 254 no pin defined, bur enable is active for FULLSTEP and HALFSTEP (4pin steppers)
+	#define NO_STEPPER_ENABLE 255
+	#define NO_ENABLEPIN 254
+  uint8_t speedZero;			// Flag for speed is set to zero
+    #define NORMALSPEED		0	// speed is not set to zero
+	#define DECELSPEEDZERO	1	// lowering speed to zero ( ramping down )
+	#define ZEROSPEEDACTIVE	2	// create no further steps
+	#define MINSPEEDZERO   20	// real minimum speed before actually stopping ( creating no more steppulses )
+	
   #ifdef FAST_PORTWRT
-  portBits_t portPins[4];       // Outputpins as Portaddress and Bitmask for faster writing
+  portBits_t portPins[4];       // Outputpins as Portaddress and Bitmask for faster writing ( only AVR processors)
   #else
   uint8_t pins[4];                 // Outputpins as Arduino numbers
   #endif
@@ -120,11 +136,11 @@ class MoToStepper
     stepperData_t _stepperData;      // Variables that are used in IRQ
     uint8_t _stepperIx;              // Objectnumber ( 0 ... MAX_STEPPER )
     long stepsRev;                   // steps per full rotation
-    uintxx_t _stepSpeed10;      	// speed in steps/10sec
+    uintxx_t _stepSpeed10;      	// speed in steps/10sec as last set by user
     uintxx_t _lastRampLen ;         // last manually set ramplen
     uintxx_t _lastRampSpeed;        // speed when ramp was set manually
     long stepsToMove;               // from last point
-    uint8_t stepMode;               // FULLSTEP or HALFSTEP
+    uint8_t stepMode;               // STEPDIR, FULLSTEP or HALFSTEP
     
     long getSFZ();                  // get step-distance from last reference point
     long lastSFZ;                   // last read value ( for corrections in doSteps ) 
@@ -142,17 +158,18 @@ class MoToStepper
     MoToStepper (MoToStepper && )            =delete;
 
     //Constuctor:
-    MoToStepper(long steps);            // steps per 360 degree in HALFSTEP mode or A4988 Mode on ESP
+    MoToStepper(long steps);            // steps per 360 degree in HALFSTEP mode or STEPDIR Mode on ESP
     MoToStepper(long steps, uint8_t mode ); // with ESP8266 only STEPDIR is allowed
 	#ifndef ESP8266 				// there are no different modes with ESP8266
-                                        // mode means A4988 ( Step/Dir), HALFSTEP or FULLSTEP
+                                        // mode means STEPDIR ( Step/Dir), HALFSTEP or FULLSTEP
         //Methods                                
         uint8_t attach( uint8_t,uint8_t,uint8_t,uint8_t); //single pins definition for output
         uint8_t attach(uint8_t outArg);    // stepMode defaults to halfstep
+		void attachEnable( uint16_t delay ); // enable for unipolar steppers with 4 pins
     #endif
-    uint8_t attach( uint8_t stepP, uint8_t dirP); // Port for step and direction in A4988 mode
+    uint8_t attach( uint8_t stepP, uint8_t dirP); // Port for step and direction in STEPDIR mode
                                     // returns 0 on failure
-    void    attachEnable( uint8_t enableP, uint16_t delay, bool active ); // define an enable pin and the delay (ms) between enable and starting/stopping the motor. 
+    void attachEnable( uint8_t enableP, uint16_t delay, bool active ); // define an enable pin and the delay (ms) between enable and starting/stopping the motor. 
                                                                           // 'active' defines if the output is HIGH or LOW to activate the motirdriver.
     void detach();                  // detach from output, motor will not move anymore
     void write(long angle);         // specify the angle in degrees, mybe pos or neg. angle is
@@ -165,9 +182,9 @@ class MoToStepper
     void setZero( long zeroPoint, long stepsPerRotation);  // beside zero point change steps per Rotation too
     int setSpeed(int rpm10 );       // Set movement speed, rpm*10
     uintxx_t setSpeedSteps( uintxx_t speed10 ); // set speed withput changing ramp, returns ramp length
-    uintxx_t setSpeedSteps( uintxx_t speed10, int rampLen ); // set speed and ramp, returns ramp length
+    uintxx_t setSpeedSteps( uintxx_t speed10, intxx_t rampLen ); // set speed and ramp, returns ramp length
     uintxx_t setRampLen( uintxx_t rampLen ); // set new ramplen in steps without changing speed
-    uintxx_t getSpeedSteps();		// returns actual speed in steps/10sec ( even in ramp )
+    int32_t getSpeedSteps();		// returns actual speed in steps/10sec ( even in ramp )
     void doSteps(long count);       // rotate count steps. May be positive or negative
                                     // angle is updated internally, so the next call to 'write'
                                     // will move to the correct angle
