@@ -15,16 +15,29 @@ Released versions can be installed by means of the library manager in arduino ID
 #### supported processors
 - AVR - ATmega328P ATmega2560, ATmega4809
 - AVR ATtiny, if it has the 16-bit timer 1 and a SPI or USI hardware
+- Renesas RA4M1 ( UNO R4 )
 - STM32F103x processors ( the [core of Roger Clark](https://github.com/rogerclarkmelbourne/Arduino_STM32) must be used )
 - ESP32 ( minimum core version is 1.0.6 )
 - ESP8266 ( with some restrictions, Stepper via SPI does not work )
 
-A documentation file in [german](MobaTools-250-de.pdf) and [english](MobaTools-250-en.pdf) is provided.
+A documentation file in [german](MobaTools-260-de.pdf) and [english](MobaTools-260-en.pdf) is provided.
 
 **Latest changes:**
 
 | Version |  Release Date  | Description
 | ------- |  ------------  | -----------
+| 2.6.1 | 2023-12-17| bugfix with UNO R4Wifi and steppers (with Wifi active)
+| | | 2 more examples:
+| | | + 20 buttons in a matrix via I2C IO expander PCF8575
+| | | + controlling a stepper via browser on UNO R4WiFi
+| | | 
+| 2.6.0 | 2023-12-02| several bugfixes and internal enhancements
+| | | UNO R4 and UNO Rev4 Wifi are supported ( Renesas R7FA4M1AB3CFM#AA0 Processor )
+| | | stepper.read can return the angle in fractions ( e.g. 1/10° )
+| | | 
+| 2.5.1 | 2023-10-27| Bugfix with setSpeedSteps(0)
+| | | Fix bug when setting stepper speed to 0 multiple times. The stepper stopped immediately when setting speed to 0 again while the stepper was ramping down 
+| | | Fix some minor bugs with stepper enable - especially whe setting low delay times
 | 2.5.0 | 2023-09-12| several bugfixes
 | | | ESP32 2.x package is supported ( ESP32S2, ESP32S3, ESP32C3 are not! )
 | | | ATmega4809 is supported ( Nano Every, UNO WiFi Rev2 (

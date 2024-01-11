@@ -17,14 +17,7 @@ bool IRAM_ATTR setStepperPins( stepperData_t *stepperDataP, uint8_t stepPattern 
 	// store pattern data
 	bool spiChanged = false;
 	switch ( stepperDataP->output ) {
-	  #if defined PORTD && defined PORTB && defined ARDUINO_ARCH_AVR
-	  case PIN4_7:
-		PORTD = (PORTD & 0x0f) | ( stepPattern <<4 );   
-		break;
-	  case PIN8_11:
-		PORTB = (PORTB & 0xf0) | ( stepPattern );   
-		break;
-	  #endif
+		// V2.6: PIN8_11/PIN4_7 not allowed anymore ( wasn't described in Doku since V0.8
 	  case SPI_1:
 		//SET_TP2;
 		spiStepperData[0] = (spiStepperData[0] & 0xf0) | ( stepPattern );
@@ -50,6 +43,7 @@ bool IRAM_ATTR setStepperPins( stepperData_t *stepperDataP, uint8_t stepPattern 
 	#endif
 	  case SINGLE_PINS : // Outpins are individually defined
 		for ( uint8_t bitNr = 0; bitNr < 4; bitNr++ ) {
+			// setStepperPinsAS( bitNr, stepPattern & (1<<bitNr) );
 			if ( stepPattern & (1<<bitNr) ) {
 				#ifdef FAST_PORTWRT
 				*stepperDataP->portPins[bitNr].Adr |= stepperDataP->portPins[bitNr].Mask;
@@ -89,25 +83,25 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
         //CLR_TP1;    // spike for recognizing start of each stepper
         #ifdef IS_32BIT
         bool resetPulse = false; // for 32Bit reset pulse und setting new pulse is never done in same IRQ
-        // an active pulse is LOW on 32bit processoers !
-        if ( stepperDataP->output == A4988_PINS && !digitalRead(stepperDataP->pins[0]) ) {
+        if ( stepperDataP->output == A4988_PINS && digitalRead(stepperDataP->pins[0]) ) {
         #else
         if ( stepperDataP->output == A4988_PINS  ) {
         #endif
             //SET_TP2;
-            // reset step pulse - pulse is max one cycle lenght
+            // reset step pulse - pulse is max one cycle length
             #ifdef FAST_PORTWRT
             noInterrupts();
             *stepperDataP->portPins[0].Adr &= ~stepperDataP->portPins[0].Mask;
             interrupts();
             #else
-            digitalWrite( stepperDataP->pins[0], HIGH );
+            digitalWrite( stepperDataP->pins[0], LOW );
 			#ifdef IS_32BIT
             resetPulse = true;
 			#endif
             #endif
             //CLR_TP2;
-        }
+        } // end of resetting step pulse
+		
         if ( stepperDataP->rampState >= rampStat::CRUISING &&  stepperDataP->speedZero != ZEROSPEEDACTIVE ) {
             //SET_TP3;
             // only active motors with speed > 0
@@ -145,14 +139,7 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
                 noInterrupts(); // because of read modify write actions in setting outputs
                 #endif
                 switch ( stepperDataP->output ) {
-                  #if defined PORTD && defined PORTB && defined ARDUINO_ARCH_AVR
-                  case PIN4_7:
-                    PORTD = (PORTD & 0x0f) | ( stepPattern[ _patIx ] <<4 );   
-                    break;
-                  case PIN8_11:
-                    PORTB = (PORTB & 0xf0) | ( stepPattern[ _patIx ] );   
-                    break;
-                  #endif
+					// V2.6: PIN8_11/PIN4_7 not allowed anymore ( wasn't described in Doku since V0.8
                   case SPI_1:
                     //SET_TP2;
                     spiStepperData[0] = (spiStepperData[0] & 0xf0) | ( stepPattern[ _patIx ] );
@@ -221,7 +208,7 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
                     #ifdef FAST_PORTWRT
                     *stepperDataP->portPins[0].Adr |= stepperDataP->portPins[0].Mask;
                     #else
-                    digitalWrite( stepperDataP->pins[0], LOW );
+                    digitalWrite( stepperDataP->pins[0], HIGH );
                     //SET_TP4;
                     #endif
                     break;
@@ -247,6 +234,7 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
                         if (stepperDataP->enablePin != NO_STEPPER_ENABLE) {
                             // enable is active, wait for disabling
                             stepperDataP->aCycSteps = stepperDataP->cycDelay;
+							nextCycle = MIN_STEP_CYCLE/2; // step pulse will be resettet in half of min steptime
                             stepperDataP->rampState = rampStat::STOPPING;
                         } else {    
                         stepperDataP->aCycSteps = ISR_IDLETIME;    // no more Interrupts for this stepper needed
@@ -385,6 +373,7 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
             nextCycle = (nextCycle_t)min ( (uintxx_t)nextCycle, (uintxx_t)stepperDataP->aCycSteps-stepperDataP->cycCnt );
             //CLR_TP3;
         } // end of 'if stepper active AND moving'
+		
         else if ( stepperDataP->rampState == rampStat::STARTING && stepperDataP->speedZero != ZEROSPEEDACTIVE ) {
             // we start with enable function active ( cycCnt is already set to 0 )
 			// enable the motor and wait delaytime (cycDelay) before executing first step.
@@ -417,11 +406,13 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
 				}
                 stepperDataP->rampState = rampStat::STOPPED;
             }
+			nextCycle = (nextCycle_t)min ( (uintxx_t)nextCycle, (uintxx_t)stepperDataP->aCycSteps-stepperDataP->cycCnt );
+
         }
 
         //CLR_TP1;
         stepperDataP = stepperDataP->nextStepperDataP;
-        //SET_TP1; //CLR_TP2;
+        SET_TP1; //CLR_TP2;
     } // end of stepper-loop
     
     // shift out spiStepperData, if SPI is active
@@ -461,22 +452,27 @@ uintxx_t MoToStepper::setSpeedSteps( uintxx_t speed10, intxx_t rampLen ) {
     newSpeed10 = min( uintxx_t(1000000L / MIN_STEPTIME * 10), speed10 );
 	_noStepIRQ();
 	if ( newSpeed10 == 0) {
-		if ( _chkRunning() ) { 
-			// stepper is moving, we hahe to stop it
-			if ( _stepperData.stepRampLen > 0) {
-				_stepperData.speedZero = DECELSPEEDZERO;	// there is a ramp, flag for ramping down to speed 0
-			} else {
-				// no ramp, simply inhibit creating pulses, disable stepper if needed.
-				_stepperData.speedZero = ZEROSPEEDACTIVE;				
-				if (_stepperData.enablePin != NO_STEPPER_ENABLE ) {
-					_stepperData.aCycSteps = _stepperData.cycDelay;
-					_stepperData.rampState = rampStat::STOPPING;
+		if ( _stepperData.speedZero == NORMALSPEED ) {
+			// We are not yet in ZEROSPEED-mode so stop the stepper to standstill
+			// Because ramplen has been set to 0 when already in ZEROSPEED mode we must not do that again if
+			// already active.
+			if ( _chkRunning() ) { 
+				// stepper is moving, we hahe to stop it
+				if ( _stepperData.stepRampLen > 0) {
+					_stepperData.speedZero = DECELSPEEDZERO;	// there is a ramp, flag for ramping down to speed 0
+				} else {
+					// no ramp, simply inhibit creating pulses, disable stepper if needed.
+					_stepperData.speedZero = ZEROSPEEDACTIVE;				
+					if (_stepperData.enablePin != NO_STEPPER_ENABLE ) {
+						_stepperData.aCycSteps = _stepperData.cycDelay;
+						_stepperData.rampState = rampStat::STOPPING;
+					}
 				}
-			}
-		} else { 
-		  // Stepper doesn't move, only inhibit starting
-			_stepperData.speedZero = ZEROSPEEDACTIVE;	// set stepper inactive ( no ISR action )
-		}  
+			} else { 
+			  // Stepper doesn't move, only inhibit starting
+				_stepperData.speedZero = ZEROSPEEDACTIVE;	// set stepper inactive ( no ISR action )
+			}  
+		}
 		newSpeed10 = MINSPEEDZERO; // minimum speed in ramp before stopping
 	} else {
 		if (_stepperData.enablePin != NO_STEPPER_ENABLE && _stepperData.speedZero == ZEROSPEEDACTIVE ) {
@@ -648,6 +644,6 @@ void MoToStepper::prDynData() {             // print actual Stepperdata
     DB_PRINT(" XrampL=%5u\t rampLen=%4u\t stepsInRamp=%4u\t, rampState=%s(%u)",printData.cyctXramplen,printData.stepRampLen,printData.stepsInRamp,rsC[(int)printData.rampState],(int)printData.rampState);
     DB_PRINT("deltaStp=%4d,\t speedFlg=%d cycnt=%4ld, nextCyc=%4d", printData.deltaSteps, printData.speedZero, printData.cycCnt, prNextCycle );
 
-    Serial.println("^^^^^^^^^^^^^^ISR-Data^^^^^^^^^^^^^^^^");
+    DB_PRINT("^^^^^^^^^^^^^^ISR-Data^^^^^^^^^^^^^^^^");
     #endif
 }

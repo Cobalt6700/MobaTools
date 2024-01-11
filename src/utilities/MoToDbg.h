@@ -157,7 +157,28 @@
         #define MODE_TP4  pinMode(TP4,OUTPUT )  
         #define SET_TP4   digitalWrite( TP4, HIGH )
         #define CLR_TP4  digitalWrite( TP4, LOW ) 
-        
+    
+	#elif defined ARDUINO_ARCH_RENESAS_UNO 
+	    //#warning "Debug ra4M1 aktiv" 
+        #define TP1 BSP_IO_PORT_00_PIN_14 // (14) A0
+        #define TP2 BSP_IO_PORT_00_PIN_00 //* (15) A1
+        #define TP3 BSP_IO_PORT_00_PIN_01 /* (16) A2  */
+        #define TP4 BSP_IO_PORT_00_PIN_02 //* (17) A3 
+        #define MODE_TP1 pinMode( A0,OUTPUT )  
+		//#define SET_TP1 digitalWrite(A0,HIGH)
+		//#define CLR_TP1 digitalWrite(A0,LOW);
+        #define SET_TP1  R_IOPORT_PinWrite(NULL, TP1, BSP_IO_LEVEL_HIGH)
+        #define CLR_TP1  R_IOPORT_PinWrite(NULL, TP1, BSP_IO_LEVEL_LOW)
+        #define MODE_TP2 pinMode(A1,OUTPUT )  
+        #define SET_TP2  R_IOPORT_PinWrite(NULL, TP2, BSP_IO_LEVEL_HIGH)
+        #define CLR_TP2  R_IOPORT_PinWrite(NULL, TP2, BSP_IO_LEVEL_LOW)
+        #define MODE_TP3  pinMode(A2,OUTPUT )  
+        #define SET_TP3   R_IOPORT_PinWrite(NULL, TP3, BSP_IO_LEVEL_HIGH)
+        #define CLR_TP3  R_IOPORT_PinWrite(NULL, TP3, BSP_IO_LEVEL_LOW)
+        #define MODE_TP4  pinMode(A3,OUTPUT )  
+        #define SET_TP4   R_IOPORT_PinWrite(NULL, TP4, BSP_IO_LEVEL_HIGH)
+        #define CLR_TP4  R_IOPORT_PinWrite(NULL, TP4, BSP_IO_LEVEL_LOW) 
+	
     #else // processor not known
         #define MODE_TP1
         #define SET_TP1
@@ -206,13 +227,14 @@
 
 #ifdef debugPrint
     #warning "Debug-printing is active"
-    #ifdef ARDUINO_ARCH_STM32F1
-        #define DB_PRINT( x, ... ) {char dbgBuf[80]; sprintf( dbgBuf,  x , ##__VA_ARGS__ ) ; Serial.println( dbgBuf ); }
+	#ifdef ARDUINO_ARCH_AVR
+        //#define DB_PRINT( x, ... ) {char dbgBuf[80]; sprintf_P( dbgBuf, PSTR( x ), ##__VA_ARGS__ ) ; Serial.println( dbgBuf ); }
+        #define DB_PRINT( x, ... ) {char dbgBuf[80]; snprintf_P( dbgBuf, 80, PSTR( x ), ##__VA_ARGS__ ) ; Serial.println( dbgBuf ); }
+        //#define DB_PRINT( x, ... ) {char dbgBuf[80]; sprintf( dbgBuf,  x , ##__VA_ARGS__ ) ; Serial.println( dbgBuf ); }
     #elif defined ARDUINO_ARCH_ESP32
         #define DB_PRINT( x, ... ) Serial.printf(  x , ##__VA_ARGS__ ) 
     #else
-        //#define DB_PRINT( x, ... ) {char dbgBuf[80]; sprintf_P( dbgBuf, PSTR( x ), ##__VA_ARGS__ ) ; Serial.println( dbgBuf ); }
-        #define DB_PRINT( x, ... ) {char dbgBuf[80]; snprintf_P( dbgBuf, 80, PSTR( x ), ##__VA_ARGS__ ) ; Serial.println( dbgBuf ); }
+        #define DB_PRINT( x, ... ) {char dbgBuf[80]; sprintf( dbgBuf,  x , ##__VA_ARGS__ ) ; Serial.println( dbgBuf ); }
     #endif
     extern const char *rsC[] ;    
 #else

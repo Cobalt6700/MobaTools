@@ -3,7 +3,7 @@
   Author: fpm, fpm@mnet-mail.de
   Copyright (c) 2020 All rights reserved.
 
-  Functions for the stepper part of MobaTools
+  Functions for the servo part of MobaTools
 */
 #define COMPILING_MOTOSERVO_CPP  // this allows servo-specific defines in includefiles
 
@@ -111,7 +111,7 @@ ISR ( TIMERx_COMPA_vect) {
 #elif defined  (ARDUINO_ARCH_MEGAAVR )
 ISR (TCA0_CMP0_vect) {
 	TCA0.SINGLE.INTFLAGS = TCA_SINGLE_CMP0_bm;	// Reset IRQ-flag
-#elif defined __STM32Fx__
+#else // STM32Fx and Renesas RA4M1
 void ISR_Servo( void) {
     uint16_t OCRxA = 0;
 #endif
@@ -244,9 +244,7 @@ void ISR_Servo( void) {
         }
         //CLR_TP2; CLR_TP3; // Oszimessung Dauer der ISR-Routine ON
     } //end of 'pulse ON'
-    #ifdef __STM32Fx__
-    timer_set_compare(MT_TIMER,  SERVO_CHN, OCRxA);
-    #endif 
+	setServoCmpAS(OCRxA);	// set Servo-compare register
     //CLR_TP1; CLR_TP3; // Oszimessung Dauer der ISR-Routine
     CLR_TP2;
 }
@@ -448,12 +446,12 @@ void MoToServo::write(uint16_t angleArg)
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 void MoToServo::setSpeedTime(uint16_t minMaxTime ) {
 	// Set speed as time (in milliseconds) needed when moving from 0° ... 180°
-	//uint16_t maxTics = time2tic ( _maxPw - _minPw );
-	uint16_t maxTics = 8* ( _maxPw - _minPw );	//	tics are counted in 0.125 µs
+	uint16_t maxTics = 8* ( _maxPw - _minPw );	//	tics are counted in 0.125 µs	
 	uint16_t speedCycles = minMaxTime / 20;	// Nbr of pulses needed from 0° to 180°
 	if ( speedCycles == 0 ) speedCycles = 1;	// Avoid divide by zero
 	uint16_t speedTics = maxTics / speedCycles;
 	setSpeed( speedTics, HIGHRES );	// no compatibility mode, when new speed method is used
+	DB_PRINT(" IPM=%d, TPM=%d", INC_PER_MICROSECOND, TICS_PER_MICROSECOND );
 }
 	
 	
