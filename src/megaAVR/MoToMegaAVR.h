@@ -2,7 +2,7 @@
 #define MOTOMEGAAVR_H
 // AVR specific defines for Cpp files
 
-//#warning megaAVR specific cpp includes
+#warning megaAVR specific cpp includes
 
 void seizeTimerAS();
 // reenabling interrupts within an ISR
@@ -15,6 +15,7 @@ static inline __attribute__((__always_inline__)) void _noStepIRQ() {
         TCA0_SINGLE_INTCTRL &= ~TCA_SINGLE_CMP1_bm ; 
     noStepISR_Cnt++;
     #if defined COMPILING_MOTOSTEPPER_CPP
+    #warning "COMPILING_MOTOSTEPPER_CPP"
     SET_TP3;
     #endif
     interrupts(); // allow other interrupts
@@ -88,8 +89,15 @@ extern uint8_t bitSS;
         bitSS = digitalPinToBitMask(MoToSS);
         pinMode( MoToSS, OUTPUT );
 		// Map SPI0-pins
-		PORTMUX_TWISPIROUTEA &=  ~PORTMUX_SPI0_gm; // Clear SPI-Bits
-		PORTMUX_TWISPIROUTEA |=  SPI_MUX; // set MUX according to Board
+        #if defined MEGATINYCORE
+            PORTMUX_SPIROUTEA &=  ~PORTMUX_SPI0_gm; // Clear SPI-Bits
+            PORTMUX_SPIROUTEA |=  SPI_MUX; // set MUX according to Board      
+            // PORTMUX.TWISPIROUTEA &=  ~PORTMUX_SPI0_gm; // Clear SPI-Bits
+            // PORTMUX.TWISPIROUTEA |=  SPI_MUX; // set MUX according to Board
+        #else
+             PORTMUX_TWISPIROUTEA &=  ~PORTMUX_SPI0_gm; // Clear SPI-Bits
+             PORTMUX_TWISPIROUTEA |=  SPI_MUX; // set MUX according to Board
+        #endif
 		// SPI-Mode 0 mit Sendebuffer ( 2.byte kann sofort geschrieben werden )
 		// SPI0_CTRLB = SPI_MODE_0_gc | SPI_BUFEN_bm | SPI_BUFWR_bm | SPI_SSD_bm;
 		SPI0_CTRLB = SPI_MODE_0_gc | SPI_BUFEN_bm | SPI_BUFWR_bm | SPI_SSD_bm;
