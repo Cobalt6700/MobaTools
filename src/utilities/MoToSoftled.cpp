@@ -6,9 +6,15 @@
   Functions for the stepper part of MobaTools
 */
 
-#if defined ARDUINO_ARCH_AVR || defined ARDUINO_ARCH_MEGAAVR //this is only for 8Bit AVR controllers
+#if defined ( ARDUINO_ARCH_AVR ) || defined ( ARDUINO_ARCH_MEGAAVR ) //|| defined ( MEGACOREX ) //__AVR_ARCH__ >= 102 //this is only for 8Bit AVR controllers
 #define COMPILING_MOTOSOFTLED_CPP
 
+
+#if defined ( MEGACOREX )
+#warning motosoftled MEGACOREX
+#elif defined ( MEGATINYCORE )
+#warning motosoftled MEGATINYCORE
+#endif
 
 #include <MobaTools.h>
 //#define debugPrint

@@ -152,7 +152,7 @@
 									// if not defined, SPI clock ist CPU clock / 4
 	//#define USI_SS  7               // defines the SS - Pin with USI-SPI-Stepper
 									// if not defined the core-default (SS) is used
-#elif defined ARDUINO_ARCH_MEGAAVR ////////////////////////////////////////////////////////
+#elif defined ARDUINO_ARCH_MEGAAVR || __AVR_ARCH__ >= 102 ////////////////////////////////////////////////////////
 	#define CYCLETIME       200     // Min. irq-periode in us ( default is 200 ), 
 	#define MIN_STEP_CYCLE  2       // Minimum number of cycles per step. 
 	#ifdef ARDUINO_AVR_NANO_EVERY
@@ -164,6 +164,7 @@
 	#else
 		// default for other ( are there any?) boards or megaCoreX core
 		#define MoToSS 8		// standard for other boards
+    #warning MoToSS ARDUINO_ARCH_MEGAAVR
 	#endif
 #elif defined ARDUINO_ARCH_RENESAS_UNO ////////////////////////////////////////////////////////
 	#define MIN_STEP_CYCLE  80       // Minimum number of µsec  per Step
@@ -176,7 +177,7 @@
 #endif //////////////////////////////////////////////////////////////////////////////////
 
 // stepper related defines
-#define MAX_STEPPER     6       // 
+#define MAX_STEPPER     0       // 
 #define DEF_SPEEDSTEPS  3000    // default speed after attach
 #define DEF_RAMP        0       // default ramp after attach 
 #define RAMPOFFSET      16      // startvalue of rampcounter

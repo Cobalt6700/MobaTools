@@ -108,9 +108,14 @@ static bool searchNextPulse() {
 // not for ESP processors
 #if defined ( ARDUINO_ARCH_AVR ) 
 ISR ( TIMERx_COMPA_vect) {
-#elif defined  (ARDUINO_ARCH_MEGAAVR )
+#elif defined ( ARDUINO_ARCH_MEGAAVR )
 ISR (TCA0_CMP0_vect) {
 	TCA0.SINGLE.INTFLAGS = TCA_SINGLE_CMP0_bm;	// Reset IRQ-flag
+    #warning motoservo megaavr
+#elif __AVR_ARCH__ >= 102
+ISR (TCA0_CMP0_vect) {
+	TCA0.SINGLE.INTFLAGS = TCA_SINGLE_CMP0_bm;	// Reset IRQ-flag
+    #warning motoservo megatinycore
 #else // STM32Fx and Renesas RA4M1
 void ISR_Servo( void) {
     uint16_t OCRxA = 0;

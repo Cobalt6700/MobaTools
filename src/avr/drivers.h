@@ -21,7 +21,7 @@
 // define timer to use
 #if defined ( TCNT3 ) && !defined ( NO_TIMER3 )
     // Timer 3 is available, use it
-    //#warning "Timer 3 used"
+    #warning "Timer 3 used"
     #define TCNTx       TCNT3
     #define GET_COUNT   TCNT3
     #define TIMERx_COMPB_vect TIMER3_COMPB_vect
@@ -38,6 +38,7 @@
     #define TIMSKx     TIMSK3
 #else
     // Timer 1 benutzen
+     #warning "Timer 1 used"
     #define TCNTx       TCNT1
     #define GET_COUNT   TCNT1
     #define TIMERx_COMPB_vect TIMER1_COMPB_vect
