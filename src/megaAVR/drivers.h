@@ -3,8 +3,9 @@
 //////////////////////////////////////// processor dependent defines and declarations //////////////////////////////////////////
 //vvvvvvvvvvvvvvvvvvvvvvvvvvvvv  megaAVR ATMega4809 (Nano Every) vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 /* MobaTools uses Timer/Counter 0 (TCA0) on NanoEvery. Becuase the prescaler of TCA0 is also used for millis() on Timer TCB3,
-   it must not be changed. This leads to 4µs per tic. This is no problem for stepper and Softleds, but the resolution of servos is decreased compared to other AVR processors.
+   it must not be changed. This leads to 4µs per tic. This is no problem for stepper and Softleds, but the resolution of servos is decreased compared to other AVR processors.   
    This would be better with megaCoreX boardmanager ( it doesn't use TCA0 prescaler for millis() ), but this boardmanager doesn't support the standard bootloader of Nano Every.
+   
 */   
 //#include <avr/interrupt.h>
 #define IRAM_ATTR       // delete in .cpp files, because it has no meaning for megaAVR processors
