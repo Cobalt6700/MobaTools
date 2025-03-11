@@ -6,7 +6,7 @@
 //#define debugPrint
 #include <utilities/MoToDbg.h>
 
-#warning "HW specfic - megaavr ( Mega4809 ) ---"
+#warning "TIMER HW specfic - megaavr ( Mega4809 ) ---"
 
 uint8_t noStepISR_Cnt;   // Counter for nested StepISr-disable
 
@@ -127,7 +127,7 @@ void enableSoftLedIsrAS() {
 //#define debugPrint
 #include <utilities/MoToDbg.h>
 
-#warning "HW specfic - megatinycore ---"
+#warning "TIMER HW specfic - megatinycore ---"
 
 uint8_t noStepISR_Cnt;   // Counter for nested StepISr-disable
 
