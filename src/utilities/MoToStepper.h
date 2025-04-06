@@ -84,7 +84,7 @@ typedef struct stepperData_t {
 	uint16_t aCycRemain;          // accumulate tCycRemain when cruising
     #endif
 	uintxx_t cyctXramplen;        // precompiled  tCycSteps*(rampLen+RAMPOFFSET)
-    volatile uintxx_t cycCnt;     // counting cycles until cycStep
+    volatile uintxx_t cycCnt;     // counting cycles until a step is due
 	uintxx_t cycDelay;            // delay time enable -> stepping
   #endif
   uintxx_t  stepRampLen;        // Length of ramp in steps
@@ -94,12 +94,16 @@ typedef struct stepperData_t {
   rampStat rampState;        	// State of stepper: stopped, cruising, acceleration/deceleration ...
   volatile long stepsFromZero;  // distance from last reference point ( always as steps in HALFSTEP mode )
                                 // in FULLSTEP mode this is twice the real step number
-  uint8_t output  :6 ;             // PORTB(pin8-11), PORTD (pin4-7), SPI0,SPI1,SPI2,SPI3, SINGLE_PINS, A4988_PINS
+  // bit-coded byte:
+  uint8_t output  :5 ;             // PORTB(pin8-11), PORTD (pin4-7), SPI0,SPI1,SPI2,SPI3, SINGLE_PINS, A4988_PINS
   uint8_t delayActiv :1;        // enable delaytime is running
   uint8_t enable:1;             // true: enablePin=HIGH is active, false: enablePin=LOW is active
+  uint8_t enableOn:1;			// true: Enable is active, can be switched off/on by user if it is
+								// generally enabled ( see enablePin )
+
   uint8_t enablePin;            // define an enablePin, which is active while the stepper is moving 
 								// 255: enable is not active, 254 no pin defined, bur enable is active for FULLSTEP and HALFSTEP (4pin steppers)
-	#define NO_STEPPER_ENABLE 255
+	#define NO_STEPPER_ENABLE 255 // enableOn is fixed to 'false'
 	#define NO_ENABLEPIN 254
   uint8_t speedZero;			// Flag for speed is set to zero
     #define NORMALSPEED		0	// speed is not set to zero
@@ -119,10 +123,10 @@ typedef union { // used output channels as bit and uint8_t
       struct {
         uint8_t pin8_11 :1;
         uint8_t pin4_7  :1;
-        uint8_t spi1    :1;
-        uint8_t spi2    :1;
-        uint8_t spi3    :1;
-        uint8_t spi4    :1;
+        uint8_t spi_1    :1;
+        uint8_t spi_2    :1;
+        uint8_t spi_3    :1;
+        uint8_t spi_4    :1;
       };
       uint8_t outputs;
     
@@ -172,6 +176,9 @@ class MoToStepper
                                     // returns 0 on failure
     void attachEnable( uint8_t enableP, uint16_t delay, bool active ); // define an enable pin and the delay (ms) between enable and starting/stopping the motor. 
                                                                           // 'active' defines if the output is HIGH or LOW to activate the motirdriver.
+	bool autoEnable(bool state);	// enable/disable switching off the stepper ( only if attachEnable was called )
+									// returns active state ( always false, if attachEnable  was not called )
+	bool autoEnable ();				// returns active state
     void detach();                  // detach from output, motor will not move anymore
     void write(long angle);         // specify the angle in degrees, mybe pos or neg. angle is
                                     // measured from last 'setZero' point

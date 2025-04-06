@@ -18,7 +18,7 @@
 // version with sdk calls
 #include <driver/ledc.h>
 
-#warning "HW specfic drivers.c (using sdk) - ESP32  --"
+//#warning "HW specfic drivers.c (using sdk) - ESP32  --"
 #error "SDK-version must not be used"
 
 // variant with using the sdk to configure ledc hardware
@@ -108,7 +108,7 @@ void IRAM_ATTR setPwmDuty(int8_t pwmNbr, uint32_t duty ){
 #include "soc/ledc_reg.h"
 #include "soc/ledc_struct.h"
 
-//#warning "HW specfic drivers.c (direct reg access) - ESP32 --"
+//#pragma message "HW specfic drivers.c (direct reg access) - ESP32 --"
 // variant with direct acces to ledc PWM register
 // APB_CLK must be 80MHz
 

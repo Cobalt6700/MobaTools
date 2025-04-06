@@ -7,12 +7,10 @@
 */
 #define COMPILING_MOTOSOFTLED32_CPP
 
+//#define debugPrint
+//#define debugTP
 #include <MobaTools.h>
 #ifdef MOTOSOFTLED32 // version for 32bit controllers ( except ESP8266/32 )
-
-#define debugPrint
-//#define debugTP
-#include <utilities/MoToDbg.h>
 
 // Global Data for all instances and classes  --------------------------------
 
@@ -116,7 +114,7 @@ void softledISR(uint32_t cyclesLastIRQ) { // uint32 for 32-Bit processors
                 //CLR_TP1;
             } // end of led loop
         } else { // is switchofftime within PWM cycle
-            SET_TP3;
+            //SET_TP3;
             for ( ledDataP=ledRootP; ledDataP!=NULL; ledDataP = ledDataP->nextLedDataP ) {
                 //SET_TP4;
                 if ( ledDataP->actPulse ) {
@@ -132,7 +130,7 @@ void softledISR(uint32_t cyclesLastIRQ) { // uint32 for 32-Bit processors
                 }
                 //CLR_TP4;
             }
-            CLR_TP3;
+            //CLR_TP3;
         }
         //CLR_TP3;
      } // end of softleds 
@@ -284,7 +282,7 @@ void MoToSoftLed::on(){
         }
         mount( stateT ); // mount into chain if not already mounted
     }
-    DB_PRINT( "Led %08lx On, stepI=%d, state=%d", (uint32_t)this, _ledData.stepI, _ledData.state);
+    //DB_PRINT( "Led %08lx On, stepI=%d, state=%d", (uint32_t)this, _ledData.stepI, _ledData.state);
 }
 
 void MoToSoftLed::off(){
@@ -302,7 +300,7 @@ void MoToSoftLed::off(){
         mount( stateT ); // mount into chain if not already mounted
         //CLR_TP3;
     }
-    DB_PRINT( "Led %08lx On, stepI=%d, state=%d", (uint32_t)this, _ledData.stepI, _ledData.state);
+    //DB_PRINT( "Led %08lx On, stepI=%d, state=%d", (uint32_t)this, _ledData.stepI, _ledData.state);
 }
 
 void MoToSoftLed::toggle( void ) {

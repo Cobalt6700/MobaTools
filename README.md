@@ -16,16 +16,29 @@ Released versions can be installed by means of the library manager in arduino ID
 - AVR - ATmega328P ATmega2560, ATmega4809
 - AVR ATtiny, if it has the 16-bit timer 1 and a SPI or USI hardware
 - Renesas RA4M1 ( UNO R4 )
+- RP2040 / RP2350 processors ( the [core of Earle Philhower](https://github.com/earlephilhower/arduino-pico) must be used )
 - STM32F103x processors ( the [core of Roger Clark](https://github.com/rogerclarkmelbourne/Arduino_STM32) must be used )
-- ESP32 ( minimum core version is 1.0.6 )
+- ESP32 ( core versions 2.x and 3.x )
 - ESP8266 ( with some restrictions, Stepper via SPI does not work )
 
-A documentation file in [german](MobaTools-260-de.pdf) and [english](MobaTools-260-en.pdf) is provided.
+A documentation file in [german](MobaTools-270-de.pdf) and [english](MobaTools-270-en.pdf) is provided.
 
 **Latest changes:**
 
 | Version |  Release Date  | Description
 | ------- |  ------------  | -----------
+| 2.7.0 | 2025-03-05| several bugfixes, some docu enhancements
+| | | Support of RP2040 / RP2350
+| | | Synchronos move of steppers ( without acceleration, experimental )
+| | | New servo example for turnouts ( model railroad)
+| | | The enable function for steppers can be dynamically switched on/off
+| | | 
+| 2.6.3 | 2024-12-23| 
+| | | bugfix in example UNO-R4WiFi-Web: Sketch hangs if the connection to WiFi cannot not be established very fast.
+| | | bugfix when using LGT8F328P: Timer 3 must not be used
+| 2.6.2 | 2024-09-05| support V3.x of ESP32 core ( V2.x is still supported too )
+| | | fixed endless rotating when moveTo is called very frequently in quick sequence (issue #34 on github )
+| | | 
 | 2.6.1 | 2023-12-17| bugfix with UNO R4Wifi and steppers (with Wifi active)
 | | | 2 more examples:
 | | | + 20 buttons in a matrix via I2C IO expander PCF8575

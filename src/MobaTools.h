@@ -3,7 +3,7 @@
 /*
   MobaTools.h - a library for model makers - and others too ;-) 
   Author: Franz-Peter Müller, f-pm+gh@mailbox.org
-  Copyright (c) 2023 All rights reserved.
+  Copyright (c) 2024 All rights reserved.
 
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
@@ -19,9 +19,19 @@
   License along with this library; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-  MobaTools V2.6.1
+  MobaTools V2.7.0
    
   History:
+  V2.7.0 3-2024
+    - New class for synced move of steppers ( without acceleration )
+	- Example for synced move
+	- New example: servos for turnouts
+	- MoToTimer: new ( optional) parameter for setting the initial time
+	- Support for rp2040/rp2350 processor ( raspberry pi pico )
+	- The enable function for steppers can be dynamically switched on/offseveral bugfixes
+  V2.6.2 9-2024
+    - ESP32 core version 3.x is supported ( V2.x is still supported too )
+	- fixed endless rotating when setting moveTo very quickly. (issue#34 on github) 
   V2.6.1 12-2023
     - bugfix with UNO R4Wifi and steppers (with Wifi active)
     - 2 more examples ( button matrix and UNO R4 Wifi and stepper )
@@ -120,6 +130,9 @@
 
     
 // default CYCLETIME is processordependent, change only if you know what you are doing ).
+// If it is not defined here it is 1 ( µs ). 
+// CYCLETIME and MIN_STEP_CYCLE define the maximum step rate for steppers ( which also depends on the overall load )
+
 #ifdef  ARDUINO_ARCH_ESP8266 ///////////////////////////////////////////////////////////
 	#define CYCLETIME       60      // Min. irq-periode in us ( ESP-default is 60 )
 									// = high time of Steppulse
@@ -137,13 +150,17 @@
 	#define MIN_STEP_CYCLE  25   // Minimum number of µsec  per step 
 
 #elif defined ARDUINO_ARCH_ESP32 ///////////////////////////////////////////////////////
-	#if CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3
+	#if CONFIG_IDF_TARGET_ESP32S2 /*|| CONFIG_IDF_TARGET_ESP32S3*/ || CONFIG_IDF_TARGET_ESP32C3
 		#error This ESP32 version is not supported
 	#else
 		#define USE_VSPI                // default is HSPI ( for SPI-Stepper )
 		#define MIN_STEP_CYCLE 20       // Minimum number of µsec  per Step
 	#endif
 #elif defined ARDUINO_ARCH_AVR ////////////////////////////////////////////////////////
+	#ifdef  ARDUINO_AVR_LARDU_328E
+		// Timer3 of LGT8Fx is incompatible with MobaTools
+		#define NO_TIMER3
+	#endif
 	//#define NO_TIMER3             // never use Timer 3
 	#define CYCLETIME       200     // Min. irq-periode in us ( default is 200 ), 
 	#define MIN_STEP_CYCLE  2       // Minimum number of cycles per step. 
@@ -170,7 +187,11 @@
 	#define IRQ_PRIO 12				// NVIC priority. Servo irq is always one prio higher.
 									// Lower priority ( higher value) will lead to problems on R4 WiFi 
 									// with WiFi active
-
+#elif defined ARDUINO_ARCH_RP2040 && !defined ARDUINO_ARCH_MBED  ///////////////////////////////////////////////////////////
+	#define MIN_STEP_CYCLE 20       // increment for nextCycle if too short
+	//#define USE_SPI1				// if SPI 1 for SPI-Stepper should be used ( not possible on nano RP2040 )
+	#define STP_TIMR_NBR 0          // can be set to 1 on RP2350 ( Pico 2 )
+	#define SPI_CLOCK 2000000L
 #else ///////////////////////////////////////////////////////////////////////////////////
     #error Processor not supported
 #endif //////////////////////////////////////////////////////////////////////////////////
@@ -182,9 +203,9 @@
 #define RAMPOFFSET      16      // startvalue of rampcounter
 
 // servo related defines
-#if defined ARDUINO_ARCH_ESP32 || defined ARDUINO_ARCH_ESP8266 
-#define MINPULSEWIDTH   550U     // there is no general limit on ESP
-#define MAXPULSEWIDTH   2600U    // there is no general limit on ESP
+#if defined ARDUINO_ARCH_ESP32 || defined ARDUINO_ARCH_ESP8266 || defined ARDUINO_ARCH_RP2040
+#define MINPULSEWIDTH   550U     // there is no general limit on ESP / RP2040
+#define MAXPULSEWIDTH   2600U    // there is no general limit on ESP / RP2040
 #else // all other ( no ESP )
 #define MINPULSEWIDTH   700U      // don't make it shorter than 700
 #define MAXPULSEWIDTH   2300U     // don't make it longer than 2300
@@ -198,22 +219,29 @@
 
 //  !!!!!!!!!!!!  Don't change anything after tis line !!!!!!!!!!!!!!!!!!!!
  
-
 #include <utilities/MoToBase.h>
 #include <utilities/MoToStepper.h>
+#include <utilities/MoToSyncStepper.h>
 #include <utilities/MoToServo.h>
 #include <utilities/MoToSoftled.h>
 #include <utilities/MoToPwm.h>
+
+#include <utilities/MoToDbg.h>
+
 #ifdef ARCHITECT_INCLUDE
 #include ARCHITECT_INCLUDE
 #endif
-#ifndef INTERNALUSE
+
+
 #include <MoToButtons.h>
 #include <MoToTimer.h>
+
+#if 0
+#define XSTR(x) STR(x)
+#define STR(x) #x   // encloses x in ".."
+#define GCC_Version XSTR(__cplusplus)
+#pragma message "using GCC-Version: " GCC_Version
 #endif
 
-#ifdef debug
-#include <utilities/MoToDbg.h>
-#endif
 #endif
 

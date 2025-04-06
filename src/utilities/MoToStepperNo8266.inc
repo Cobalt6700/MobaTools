@@ -80,14 +80,12 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
     stepperDataP = stepperRootP;
     // ---------------Stepper motors ---------------------------------------------
     while ( stepperDataP != NULL ) {
-        //CLR_TP1;    // spike for recognizing start of each stepper
         #ifdef IS_32BIT
         bool resetPulse = false; // for 32Bit reset pulse und setting new pulse is never done in same IRQ
         if ( stepperDataP->output == A4988_PINS && digitalRead(stepperDataP->pins[0]) ) {
         #else
         if ( stepperDataP->output == A4988_PINS  ) {
         #endif
-            //SET_TP2;
             // reset step pulse - pulse is max one cycle length
             #ifdef FAST_PORTWRT
             noInterrupts();
@@ -99,33 +97,33 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
             resetPulse = true;
 			#endif
             #endif
-            //CLR_TP2;
         } // end of resetting step pulse
 		
         if ( stepperDataP->rampState >= rampStat::CRUISING &&  stepperDataP->speedZero != ZEROSPEEDACTIVE ) {
-            //SET_TP3;
             // only active motors with speed > 0
-            if ( stepperDataP->aCycSteps ) stepperDataP->cycCnt+=cyclesLastIRQ;
+            //if ( stepperDataP->aCycSteps ) stepperDataP->cycCnt+=cyclesLastIRQ;
+            if ( stepperDataP->aCycSteps ) stepperDataP->cycCnt=stepperDataP->cycCnt+cyclesLastIRQ;
             #ifdef IS_32BIT
             if ( stepperDataP->cycCnt >= ( stepperDataP->aCycSteps ) && !resetPulse ) {
                 //SET_TP2;
                 stepperDataP->cycCnt = stepperDataP->cycCnt - stepperDataP->aCycSteps ;
                 // 'Aufholen' zu langsamer Interrupts begrenzen
                 // cycCnt darf nie größer als aCycSteps werden ( maximale Steprate )!
-                if ( stepperDataP->cycCnt >= stepperDataP->aCycSteps ) { 
+                if ( stepperDataP->cycCnt >= stepperDataP->aCycSteps+MAX_JITTER ) { 
                     //SET_TP4; 
-                    stepperDataP->cycCnt = stepperDataP->aCycSteps; 
+                    stepperDataP->cycCnt = stepperDataP->aCycSteps+MAX_JITTER; 
                 }
                 //CLR_TP4;
-            #else
+            #else // not 32bit ( never use a jitter computing )
             if ( stepperDataP->cycCnt >= ( stepperDataP->aCycSteps ) ) {
                 //SET_TP2;
                 stepperDataP->cycCnt = 0 ;
             #endif
-                SET_TP2;
+                //SET_TP2;
                 // Do one step
                 // update position for absolute positioning
-                stepperDataP->stepsFromZero += stepperDataP->patternIxInc;
+                //stepperDataP->stepsFromZero += stepperDataP->patternIxInc;
+                stepperDataP->stepsFromZero = stepperDataP->stepsFromZero +stepperDataP->patternIxInc;
                 
                 // sign of patternIxInc defines direction
                 int8_t _patIx;
@@ -208,7 +206,7 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
                     #ifdef FAST_PORTWRT
                     *stepperDataP->portPins[0].Adr |= stepperDataP->portPins[0].Mask;
                     #else
-                    digitalWrite( stepperDataP->pins[0], HIGH );
+					digitalWrite( stepperDataP->pins[0], HIGH );
                     //SET_TP4;
                     #endif
                     break;
@@ -221,7 +219,9 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
                 #endif
                 //CLR_TP2;
                 // ------------------ check if last step -----------------------------------
-                if ( --stepperDataP->stepCnt == 0 ) {
+                //if ( --stepperDataP->stepCnt == 0 ) {
+				stepperDataP->stepCnt = stepperDataP->stepCnt	-1;
+                if ( stepperDataP->stepCnt == 0 ) {
                     // this was the last step.
                     if (stepperDataP->stepCnt2 > 0 ) { // check if we have to start a movement backwards
                         // yes, change Direction and go stpCnt2 Steps
@@ -231,7 +231,7 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
                         stepperDataP->rampState = rampStat::RAMPACCEL;
                     } else {
                         stepperDataP->stepsInRamp = 0;      // we cannot be in ramp when stopped
-                        if (stepperDataP->enablePin != NO_STEPPER_ENABLE) {
+                        if (stepperDataP->enableOn) {
                             // enable is active, wait for disabling
                             stepperDataP->aCycSteps = stepperDataP->cycDelay;
 							nextCycle = MIN_STEP_CYCLE/2; // step pulse will be resettet in half of min steptime
@@ -291,8 +291,13 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
                             //DB_PRINT( "scnt=%ld, sIR=%u\n\r", stepperDataP->stepCnt, stepperDataP->stepsInRamp );
                             //SET_TP2;
                         }
-                        stepperDataP->aCycSteps = stepperDataP->cyctXramplen / ( --stepperDataP->stepsInRamp + RAMPOFFSET ) ;// +1 ;
-                        #ifndef IS_32BIT
+						// check if we can decrement steps in Ramp
+ 						if ( stepperDataP->stepsInRamp > 0 ) --stepperDataP->stepsInRamp;
+ 						#ifdef debugPrint
+ 						//else stepperDataP->errorFlg = 1; // must not be reached!!
+ 						#endif
+                         stepperDataP->aCycSteps = stepperDataP->cyctXramplen / ( stepperDataP->stepsInRamp + RAMPOFFSET ) ;// +1 ;
+                          #ifndef IS_32BIT
                         stepperDataP->aCycRemain += stepperDataP->cyctXramplen % (stepperDataP->stepsInRamp + RAMPOFFSET);
                         if ( stepperDataP->aCycRemain > (stepperDataP->stepsInRamp + RAMPOFFSET) ) {
                             stepperDataP->aCycSteps++;
@@ -325,7 +330,7 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
 								//target speed was 0, create no more steps
 								stepperDataP->speedZero = ZEROSPEEDACTIVE;
 								// if enabe is active, start Time until disabling the motor
-								if (stepperDataP->enablePin != NO_STEPPER_ENABLE) {
+								if (stepperDataP->enableOn) {
 									// enable is active, wait for disabling
 									stepperDataP->aCycSteps = stepperDataP->cycDelay;
 									stepperDataP->rampState = rampStat::STOPPING;
@@ -348,8 +353,9 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
                     }
                     #endif
                     // do we have to start the deceleration
-                    if ( stepperDataP->stepCnt <= stepperDataP->stepRampLen+1U ) {
+                    if ( stepperDataP->stepCnt <= stepperDataP->stepRampLen+1U && stepperDataP->stepRampLen != 0 ) {
                         // in mode without ramp ( stepRampLen == 0 ) , this can never be true
+						// V2.6.2 - added explicit check of ramplen to be 0
                         stepperDataP->rampState = rampStat::RAMPDECEL;
                     }
                     
@@ -362,24 +368,24 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
                 } // End of ramp-statemachine
                 //CLR_TP2;
             } // End of do one step
-			CLR_TP2;
+			//CLR_TP2;
             #ifdef IS_32BIT
             // check if max possible speed - is made at the beginning of the ISR
-            if ( stepperDataP->aCycSteps < stepperDataP->cycCnt ) {
-                stepperDataP->cycCnt = stepperDataP->aCycSteps ;
+            if ( stepperDataP->aCycSteps+MAX_JITTER < stepperDataP->cycCnt ) {
+                stepperDataP->cycCnt = stepperDataP->aCycSteps+MAX_JITTER ;
                 //SET_TP2; 
             }
             #endif
-            nextCycle = (nextCycle_t)min ( (uintxx_t)nextCycle, (uintxx_t)stepperDataP->aCycSteps-stepperDataP->cycCnt );
-            //CLR_TP3;
+            nextCycle = (nextCycle_t)min ( (uintxx_t)nextCycle, (uintxx_t)stepperDataP->aCycSteps+MAX_JITTER-stepperDataP->cycCnt );
+            CLR_TP2;
         } // end of 'if stepper active AND moving'
 		
         else if ( stepperDataP->rampState == rampStat::STARTING && stepperDataP->speedZero != ZEROSPEEDACTIVE ) {
-            // we start with enable function active ( cycCnt is already set to 0 )
+            // we start with enable function active ( cycCnt is already set to 0 resp. MAX_JITTER )
 			// enable the motor and wait delaytime (cycDelay) before executing first step.
 			// if no enablepin is defined, the steppattern must be set to the last active pattern.
 			if ( stepperDataP->enablePin == NO_ENABLEPIN ) {
-				// set motorwires to last pattern ( when disabling the outputs )
+				// set motorwires to last pattern ( as it was when disabling the outputs )
 				spiChanged = setStepperPins( stepperDataP, stepPattern[ stepperDataP->patternIx ] );
 			}
 			else {
@@ -393,9 +399,10 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
         } 
 		else if ( stepperDataP->rampState == rampStat::STOPPING  ) {
 			// Check if time between last step and disabling the motor has elapsed
-            stepperDataP->cycCnt+=cyclesLastIRQ;
-            if ( stepperDataP->cycCnt >= stepperDataP->aCycSteps ) {
-                stepperDataP->cycCnt = 0;
+            //stepperDataP->cycCnt+=cyclesLastIRQ;
+            stepperDataP->cycCnt=stepperDataP->cycCnt+cyclesLastIRQ;
+            if ( stepperDataP->cycCnt >= stepperDataP->aCycSteps+MAX_JITTER ) {
+                stepperDataP->cycCnt = MAX_JITTER;
 				if ( stepperDataP->enablePin == NO_ENABLEPIN ) {
 					// set motorwires to 0 to disable the motor
 					spiChanged = setStepperPins( stepperDataP, 0 );
@@ -406,13 +413,12 @@ void IRAM_ATTR stepperISR(nextCycle_t cyclesLastIRQ) {
 				}
                 stepperDataP->rampState = rampStat::STOPPED;
             }
-			nextCycle = (nextCycle_t)min ( (uintxx_t)nextCycle, (uintxx_t)stepperDataP->aCycSteps-stepperDataP->cycCnt );
+			nextCycle = (nextCycle_t)min ( (uintxx_t)nextCycle, (uintxx_t)stepperDataP->aCycSteps+MAX_JITTER-stepperDataP->cycCnt );
 
         }
 
-        //CLR_TP1;
         stepperDataP = stepperDataP->nextStepperDataP;
-        SET_TP1; //CLR_TP2;
+        //SET_TP1; //CLR_TP2;
     } // end of stepper-loop
     
     // shift out spiStepperData, if SPI is active
@@ -463,7 +469,7 @@ uintxx_t MoToStepper::setSpeedSteps( uintxx_t speed10, intxx_t rampLen ) {
 				} else {
 					// no ramp, simply inhibit creating pulses, disable stepper if needed.
 					_stepperData.speedZero = ZEROSPEEDACTIVE;				
-					if (_stepperData.enablePin != NO_STEPPER_ENABLE ) {
+					if (_stepperData.enableOn ) {
 						_stepperData.aCycSteps = _stepperData.cycDelay;
 						_stepperData.rampState = rampStat::STOPPING;
 					}
@@ -475,7 +481,7 @@ uintxx_t MoToStepper::setSpeedSteps( uintxx_t speed10, intxx_t rampLen ) {
 		}
 		newSpeed10 = MINSPEEDZERO; // minimum speed in ramp before stopping
 	} else {
-		if (_stepperData.enablePin != NO_STEPPER_ENABLE && _stepperData.speedZero == ZEROSPEEDACTIVE ) {
+		if (_stepperData.enableOn && _stepperData.speedZero == ZEROSPEEDACTIVE ) {
 			// We are starting from zero speed and enable is active, wait for enabling
 			_stepperData.aCycSteps = _stepperData.cycDelay;
 			_stepperData.rampState = rampStat::STARTING;
@@ -607,7 +613,9 @@ extern nextCycle_t nextCycle;
 //static nextCycle_t cyclesLastIRQ = 1;  // µsec since last IRQ
 
 void MoToStepper::prDynData() {             // print actual Stepperdata
- #ifdef debugPrint
+#undef debugPrint
+#ifdef debugPrint
+    #warning "should not be executed"
     stepperData_t printData;  // vor Ausdruck eine lokale Kopie erstellen
 	intxx_t prNextCycle;
     _noStepIRQ();
