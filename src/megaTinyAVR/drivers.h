@@ -16,6 +16,8 @@
 #if defined(MEGATINYCORE) && defined(MILLIS_USE_TIMERB1)
 // For ATtiny with megaTinyCore - can use prescaler of 8 = 0.5µs per tic
 #define TICS_PER_MICROSECOND (F_CPU / 1000000.0 / 8) // the clockCyclesPerMicrosecond() call inhibits compiletime evaluation
+// At 16MHz: 16,000,000 / 1,000,000 / 8 = 2 Tics per µs
+// thus, each tic is 0.5µs
 #if F_CPU != 16000000
     #error "Only 16MHz is supported. Other frequcies are not tested."
 #endif

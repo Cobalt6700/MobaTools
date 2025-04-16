@@ -178,7 +178,9 @@
 	#elif defined ARDUINO_AVR_UNO_WIFI_REV2
 		// SPI-SS for UNO Rev2 WiFi 
 		#define MoToSS 8		// Rev2 has no standard SS ( standard is pin22, which is not connected to anything )
-	#else
+  #elif defined __AVR_TINY_2__
+    #define MoToSS PIN_PA4	// Standard for Attiny 2 series is pin PA4(0);
+  #else
 		// default for other ( are there any?) boards or megaCoreX core
 		#define MoToSS 8		// standard for other boards
 	#endif
